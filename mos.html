@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>単語・文法チェッカー</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #fff;
+    color: #1a1a1a;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 16px 28px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .logo { font-size: 1rem; font-weight: 700; color: #111; }
+
+  /* タブ */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #9ca3af;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab-btn:hover { background: #f3f4f6; color: #111; }
+  .tab-btn.active { background: #111; color: #fff; }
+
+  /* Look up */
+  .lookup-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  #lookupInput {
+    flex: 1;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    background: #f9fafb;
+    color: #111;
+    transition: border-color 0.2s;
+  }
+  #lookupInput:focus { border-color: #6366f1; }
+  #lookupBtn {
+    background: #111;
+    border: none;
+    color: #fff;
+    font-size: 0.88rem;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #lookupBtn:hover { background: #6366f1; }
+  .lookup-result {
+    background: #f9fafb;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 18px 20px;
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .lookup-word {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #111;
+  }
+  .lookup-kind {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9ca3af;
+    margin-bottom: 4px;
+  }
+  .lookup-val {
+    font-size: 0.93rem;
+    color: #374151;
+    line-height: 1.6;
+  }
+  .lookup-val.dont-make {
+    color: #9ca3af;
+    font-style: italic;
+  }
+  .lookup-divider {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 0;
+  }
+  .lookup-not-found {
+    color: #9ca3af;
+    font-size: 0.88rem;
+  }
+
+  /* Word list */
+  .wl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .wl-table th {
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    text-align: left;
+    border-bottom: 1.5px solid #e5e7eb;
+  }
+  .wl-section-row td {
+    background: #f9fafb;
+    color: #6366f1;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-top: 1.5px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .wl-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #111;
+    vertical-align: top;
+  }
+  .wl-table tr:last-child td { border-bottom: none; }
+  .wl-imi { color: #6b7280; }
+  .wl-wrap {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .wl-loading { color: #9ca3af; font-size: 0.88rem; padding: 12px 0; }
+
+  main {
+    flex: 1;
+    padding: 24px 28px 100px;
+    max-width: 1000px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9ca3af;
+    margin-bottom: 6px;
+  }
+  textarea#mainText {
+    width: 100%;
+    height: 260px;
+    background: #f9fafb;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    color: #111;
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 14px 16px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.75;
+  }
+  textarea#mainText:focus { border-color: #6366f1; }
+  textarea#mainText::placeholder { color: #c4c8d0; }
+
+  #adminBtn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #111;
+    border: none;
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 10px 20px;
+    border-radius: 20px;
+    cursor: pointer;
+    z-index: 100;
+  }
+  #adminBtn:hover { background: #6366f1; }
+
+  /* パスワードモーダル */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .overlay.open { display: flex; }
+
+  .pass-modal {
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 30px;
+    width: 320px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .pass-modal h2 { font-size: 1rem; font-weight: 700; }
+  .pass-modal input[type=password] {
+    width: 100%;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-size: 0.9rem;
+    outline: none;
+    font-family: monospace;
+    background: #f9fafb;
+  }
+  .pass-modal input[type=password]:focus { border-color: #6366f1; }
+  .pass-err { color: #ef4444; font-size: 0.78rem; display: none; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-cancel {
+    background: none; border: 1.5px solid #e5e7eb; color: #6b7280;
+    border-radius: 8px; padding: 8px 16px; font-size: 0.83rem; cursor: pointer;
+  }
+  .btn-ok {
+    background: #111; border: none; color: #fff;
+    border-radius: 8px; padding: 8px 18px; font-size: 0.83rem;
+    font-weight: 600; cursor: pointer;
+  }
+  .btn-ok:hover { background: #6366f1; }
+
+  /* CMDモーダル */
+  .cmd-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+  }
+  .cmd-overlay.open { display: flex; }
+
+  .cmd-modal {
+    background: #0d0f1a;
+    border-radius: 14px;
+    width: 700px;
+    max-width: 95vw;
+    height: 520px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.4);
+    overflow: hidden;
+  }
+  .cmd-titlebar {
+    background: #1a1d2e;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #2e3150;
+    flex-shrink: 0;
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot-r { background: #ff5f57; }
+  .dot-y { background: #ffbd2e; }
+  .dot-g { background: #28c840; }
+  .cmd-title-text {
+    flex: 1; text-align: center;
+    font-size: 0.75rem; color: #6b7280;
+    letter-spacing: 0.06em; font-family: monospace;
+  }
+  .cmd-close {
+    background: none; border: none; color: #6b7280;
+    font-size: 1rem; cursor: pointer; padding: 0 2px; line-height: 1;
+  }
+  .cmd-close:hover { color: #fff; }
+
+  .cmd-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 18px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.83rem;
+    line-height: 1.65;
+    color: #c9d1e0;
+  }
+  .cmd-line { margin-bottom: 1px; white-space: pre-wrap; word-break: break-all; }
+  .cmd-in { color: #818cf8; }
+  .cmd-in::before { content: '❯ '; color: #6366f1; }
+  .cmd-ok { color: #34d399; }
+  .cmd-err { color: #f87171; }
+  .cmd-info { color: #6b7280; }
+  .show-idx { color: #4b5563; }
+  .show-val { color: #fbbf24; }
+
+  .cmd-input-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 18px;
+    border-top: 1px solid #1e2235;
+    background: #0a0c14;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .cmd-ps { color: #6366f1; font-family: monospace; font-size: 0.88rem; }
+  #cmdInput {
+    flex: 1;
+    background: none; border: none; outline: none;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.88rem;
+    caret-color: #818cf8;
+  }
+
+
+  /* ページ指定 */
+  .page-section { margin-bottom: 0; }
+  .page-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: #f9fafb;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .page-group { display: flex; flex-direction: column; gap: 5px; }
+  .page-sub-label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; }
+  .page-range-row { display: flex; align-items: center; gap: 6px; }
+  .page-dash { color: #9ca3af; font-size: 0.9rem; }
+  .page-controls input[type=number],
+  .page-controls input[type=text] {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    padding: 6px 10px;
+    font-size: 0.88rem;
+    outline: none;
+    background: #fff;
+    color: #111;
+    transition: border-color 0.2s;
+  }
+  .page-controls input[type=number] { width: 72px; }
+  .page-controls input[type=text] { width: 160px; }
+  .page-controls input:focus { border-color: #6366f1; }
+  .page-divider { width: 1px; height: 40px; background: #e5e7eb; }
+
+  /* Checkボタン・結果 */
+  .check-row { margin-top: 12px; display: flex; justify-content: flex-end; }
+  #checkBtn {
+    background: #111;
+    border: none;
+    color: #fff;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 10px 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #checkBtn:hover { background: #6366f1; }
+
+  .check-result {
+    margin-top: 14px;
+    background: #f9fafb;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .result-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .result-card .rc-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9ca3af;
+  }
+  .result-card .rc-count {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #111;
+    line-height: 1;
+  }
+  .result-card .rc-sub {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+  .result-matched {
+    margin-top: 14px;
+    width: 100%;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+  }
+  .result-matched .rm-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #9ca3af;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .matched-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .matched-tag {
+    background: #ede9fe;
+    color: #5b21b6;
+    border-radius: 5px;
+    padding: 3px 9px;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  .matched-tag.words-tag {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .matched-tag.skip-tag {
+    background: #fee2e2;
+    color: #991b1b;
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: #2e3150; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">単語・文法チェッカー</div>
+</header>
+
+<main>
+  <!-- タブ -->
+  <div class="tabs">
+    <button class="tab-btn active" id="tabChecker">Checker</button>
+    <button class="tab-btn" id="tabLookup">Look up</button>
+    <button class="tab-btn" id="tabWordlist">Word list</button>
+  </div>
+
+  <!-- Checker パネル -->
+  <div id="panelChecker">
+  <!-- ページ指定 -->
+  <div class="page-section">
+    <div class="label">ページ指定</div>
+    <div class="page-controls">
+      <div class="page-group">
+        <span class="page-sub-label">範囲指定</span>
+        <div class="page-range-row">
+          <input type="number" id="pageFrom" placeholder="開始" min="1" />
+          <span class="page-dash">–</span>
+          <input type="number" id="pageTo" placeholder="終了" min="1" />
+        </div>
+      </div>
+      <div class="page-divider"></div>
+      <div class="page-group">
+        <span class="page-sub-label">個別指定</span>
+        <input type="text" id="pageIndiv" placeholder="例: 1,3,7" />
+      </div>
+    </div>
+  </div>
+
+  <!-- テキスト入力 -->
+  <div class="label" style="margin-top:20px;">テキスト入力</div>
+  <textarea id="mainText" placeholder="ここに長文を入力してください..."></textarea>
+
+  <!-- Checkボタン -->
+  <div class="check-row">
+    <button id="checkBtn">Check</button>
+  </div>
+
+  <!-- 結果表示 -->
+  <div id="checkResult" class="check-result" style="display:none;"></div>
+  </div><!-- /panelChecker -->
+
+  <!-- Word list パネル -->
+  <div id="panelWordlist" style="display:none;">
+    <div id="wordlistContent"></div>
+  </div>
+
+  <!-- Look up パネル -->
+  <div id="panelLookup" style="display:none;">
+    <div class="lookup-row">
+      <input type="text" id="lookupInput" placeholder="語を入力..." />
+      <button id="lookupBtn">Look up</button>
+    </div>
+    <div class="lookup-result" id="lookupResult"></div>
+  </div>
+</main>
+
+<button id="adminBtn">管理者</button>
+
+<!-- パスワードモーダル -->
+<div class="overlay" id="passOverlay">
+  <div class="pass-modal">
+    <h2>管理者ログイン</h2>
+    <input type="password" id="passInput" placeholder="パスワード" />
+    <div class="pass-err" id="passErr">パスワードが正しくありません。</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="passCancel">キャンセル</button>
+      <button class="btn-ok" id="passEnter">ログイン</button>
+    </div>
+  </div>
+</div>
+
+<!-- CMDモーダル -->
+<div class="cmd-overlay" id="cmdOverlay">
+  <div class="cmd-modal">
+    <div class="cmd-titlebar">
+      <span class="dot dot-r"></span>
+      <span class="dot dot-y"></span>
+      <span class="dot dot-g"></span>
+      <span class="cmd-title-text">管理者 CMD — Firebase</span>
+      <button class="cmd-close" id="cmdClose">✕</button>
+    </div>
+    <div class="cmd-output" id="cmdOutput"></div>
+    <div class="cmd-input-row">
+      <span class="cmd-ps">$</span>
+      <input id="cmdInput" type="text" placeholder="コマンドを入力..." autocomplete="off" />
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCPdILlioJpXCnxYmmEXoHgW6kCwHZ4NjU",
+  authDomain: "tango-bunpou-checker.firebaseapp.com",
+  projectId: "tango-bunpou-checker",
+  storageBucket: "tango-bunpou-checker.firebasestorage.app",
+  messagingSenderId: "875208468520",
+  appId: "1:875208468520:web:17070aea1c2f6f462f6d1d",
+  databaseURL: "https://tango-bunpou-checker-default-rtdb.firebaseio.com/"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+const LISTS = ["bumpou", "hani", "words", "imi", "reibun"];
+const HARDCODED_PASS = "パスワード"; // Firebaseにpasswordがなければこれを使う
+let isAdmin = false;
+
+// ---- Helpers ----
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function parseArgs(str) {
+  const tokens = [];
+  let cur = "", inQ = false;
+  for (const c of str) {
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ' ' && !inQ) { if (cur) tokens.push(cur); cur = ""; }
+    else cur += c;
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
+}
+
+// bumpouとwordsは Firebase上 lists/bwitems に統合
+// 各エントリは "bumpou:though" や "words:look" の形式
+const MERGED = ["bumpou", "words"]; // 統合対象
+
+async function getRawList(name) {
+  const snap = await get(ref(db, `lists/${name}`));
+  if (!snap.exists()) return [];
+  const val = snap.val();
+  if (Array.isArray(val)) return val.filter(v => v !== null && v !== undefined);
+  return Object.values(val);
+}
+
+async function saveRawList(name, arr) {
+  await set(ref(db, `lists/${name}`), arr);
+}
+
+// CMD用: bumpou/words → bwitems にプレフィックス付きで保存
+// それ以外は従来通り
+async function getList(name) {
+  if (MERGED.includes(name)) {
+    // bwitemsから全件返す（showはどちらでも同じリストを表示）
+    return getRawList("bwitems");
+  }
+  return getRawList(name);
+}
+
+async function saveList(name, arr) {
+  if (MERGED.includes(name)) {
+    return saveRawList("bwitems", arr);
+  }
+  return saveRawList(name, arr);
+}
+
+// bwitemsへのエントリ追加（プレフィックス付き）
+async function addToBW(pos, kind, val) {
+  // kind: "bumpou" or "words"
+  const entry = kind + ":" + val;
+  const arr = await getRawList("bwitems");
+  if (pos === "f") {
+    arr.push(entry);
+  } else {
+    const i = parseInt(pos);
+    arr.splice(isNaN(i) || i < 1 ? arr.length : i - 1, 0, entry);
+  }
+  await saveRawList("bwitems", arr);
+  return arr.length;
+}
+
+// bwitemsから特定kindのエントリのみ取得（Check用）
+function filterBW(arr, kind) {
+  const prefix = kind + ":";
+  return arr
+    .filter(v => String(v).startsWith(prefix))
+    .map(v => String(v).slice(prefix.length));
+}
+
+// ---- CMD ----
+const cmdOutput = document.getElementById("cmdOutput");
+const cmdInput  = document.getElementById("cmdInput");
+let history = [], histIdx = -1;
+
+function print(html, cls = "cmd-info") {
+  const d = document.createElement("div");
+  d.className = `cmd-line ${cls}`;
+  d.innerHTML = html;
+  cmdOutput.appendChild(d);
+  cmdOutput.scrollTop = cmdOutput.scrollHeight;
+}
+
+function initCmdMessages() {
+  cmdOutput.innerHTML = "";
+  print("Firebase 接続済み ✓", "cmd-ok");
+  print("add f bumpou though  /  add f allb though 譲歩  /  remove f hani  /  replace f words 新語  /  show bumpou", "cmd-info");
+}
+
+async function addTo(pos, name, val) {
+  if (MERGED.includes(name)) {
+    await addToBW(pos, name, val);
+    return;
+  }
+  const arr = await getRawList(name);
+  if (pos === "f") {
+    arr.push(val);
+  } else {
+    const i = parseInt(pos);
+    arr.splice(isNaN(i) || i < 1 ? arr.length : i - 1, 0, val);
+  }
+  await saveRawList(name, arr);
+}
+
+async function handleCmd(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return;
+  print(escHtml(trimmed), "cmd-in");
+  history.unshift(trimmed); histIdx = -1;
+
+  const tokens = parseArgs(trimmed);
+  const cmd = tokens[0]?.toLowerCase();
+
+  if (cmd === "show") {
+    const name = tokens[1];
+    if (!name || !LISTS.includes(name)) { print(`エラー: show &lt;${LISTS.join("|")}&gt;`, "cmd-err"); return; }
+    const arr = await getList(name);
+    if (!arr.length) { print(`[${name}] は空です`, "cmd-info"); return; }
+    if (MERGED.includes(name)) {
+      const prefix = name + ":";
+      const filtered = arr.filter(v => String(v).startsWith(prefix));
+      if (!filtered.length) { print(`[${name}] は空です`, "cmd-info"); return; }
+      filtered.forEach((v, i) => {
+        const display = String(v).slice(prefix.length);
+        print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(display)}</span>`);
+      });
+    } else {
+      arr.forEach((v, i) => {
+        print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(v)}</span>`);
+      });
+    }
+    return;
+  }
+
+  if (cmd === "add") {
+    const pos = tokens[1], listArg = tokens[2], rest = tokens.slice(3).join(" ");
+    if (!pos || !listArg) { print("エラー: add &lt;f|番号&gt; &lt;リスト|allb|allw&gt; [値]", "cmd-err"); return; }
+
+    const isAllb = listArg.toLowerCase() === "allb";
+    const isAllw = listArg.toLowerCase() === "allw";
+
+    if (isAllb || isAllw) {
+      // tokens[3], tokens[4], tokens[5] がそれぞれ mainVal, imiVal, reibunVal
+      // parseArgs が "" を処理済みなのでそのまま使う
+      const mainVal   = tokens[3] || "";
+      const imiVal    = tokens[4] || "";
+      const reibunVal = tokens[5] || "";
+      const mainList = isAllb ? "bumpou" : "words";
+      await addTo(pos, mainList, mainVal);
+      await addTo(pos, "imi", imiVal);
+      await addTo(pos, "reibun", reibunVal);
+      print(`追加: [${mainList}] "${escHtml(mainVal)}" / [imi] "${escHtml(imiVal)}" / [reibun] "${escHtml(reibunVal)}"`, "cmd-ok");
+      return;
+    }
+
+    if (!LISTS.includes(listArg)) { print(`エラー: 不明なリスト "${escHtml(listArg)}"`, "cmd-err"); return; }
+    await addTo(pos, listArg, rest);
+    print(`追加: [${listArg}] "${escHtml(rest)}"`, "cmd-ok");
+    return;
+  }
+
+  if (cmd === "remove") {
+    const posRm = tokens[1], name = tokens[2];
+    if (!posRm || !name || !LISTS.includes(name)) { print("エラー: remove &lt;f|番号&gt; &lt;リスト&gt;", "cmd-err"); return; }
+    const arr = await getList(name);
+    const idx = posRm === "f" ? arr.length : parseInt(posRm);
+    if (isNaN(idx) || idx < 1 || idx > arr.length) { print(`エラー: 範囲外 (1–${arr.length})`, "cmd-err"); return; }
+    const removed = arr.splice(idx - 1, 1)[0];
+    await saveList(name, arr);
+    print(`削除: [${name}] #${idx} "${escHtml(removed)}"`, "cmd-ok");
+    return;
+  }
+
+  if (cmd === "replace") {
+    const posR = tokens[1], name = tokens[2], newVal = tokens.slice(3).join(" ");
+    if (!posR || !name || !LISTS.includes(name)) { print("エラー: replace &lt;f|番号&gt; &lt;リスト&gt; &lt;新しい値&gt;", "cmd-err"); return; }
+    const arr = await getList(name);
+    const idx = posR === "f" ? arr.length : parseInt(posR);
+    if (isNaN(idx) || idx < 1 || idx > arr.length) { print(`エラー: 範囲外 (1–${arr.length})`, "cmd-err"); return; }
+    const old = arr[idx - 1];
+    arr[idx - 1] = newVal;
+    await saveList(name, arr);
+    print(`置換: [${name}] #${idx}: "${escHtml(old)}" → "${escHtml(newVal)}"`, "cmd-ok");
+    return;
+  }
+
+  print(`不明なコマンド: "${escHtml(cmd)}"`, "cmd-err");
+}
+
+cmdInput.addEventListener("keydown", async e => {
+  if (e.key === "Enter") {
+    const v = cmdInput.value; cmdInput.value = "";
+    try { await handleCmd(v); }
+    catch(err) { print("Firebase エラー: " + escHtml(err.message), "cmd-err"); }
+  } else if (e.key === "ArrowUp") {
+    histIdx = Math.min(histIdx + 1, history.length - 1);
+    cmdInput.value = history[histIdx] || ""; e.preventDefault();
+  } else if (e.key === "ArrowDown") {
+    histIdx = Math.max(histIdx - 1, -1);
+    cmdInput.value = histIdx >= 0 ? history[histIdx] : ""; e.preventDefault();
+  }
+});
+
+// ---- Modals ----
+const adminBtn    = document.getElementById("adminBtn");
+const passOverlay = document.getElementById("passOverlay");
+const passInput   = document.getElementById("passInput");
+const passCancel  = document.getElementById("passCancel");
+const passEnter   = document.getElementById("passEnter");
+const passErr     = document.getElementById("passErr");
+const cmdOverlay  = document.getElementById("cmdOverlay");
+const cmdClose    = document.getElementById("cmdClose");
+
+function openPass() {
+  passInput.value = "";
+  passErr.style.display = "none";
+  passOverlay.classList.add("open");
+  setTimeout(() => passInput.focus(), 60);
+}
+function closePass() { passOverlay.classList.remove("open"); }
+
+function openCmd() {
+  cmdOverlay.classList.add("open");
+  setTimeout(() => cmdInput.focus(), 60);
+}
+function closeCmd() { cmdOverlay.classList.remove("open"); }
+
+adminBtn.addEventListener("click", () => {
+  if (isAdmin) openCmd(); else openPass();
+});
+passCancel.addEventListener("click", closePass);
+passOverlay.addEventListener("click", e => { if (e.target === passOverlay) closePass(); });
+cmdClose.addEventListener("click", closeCmd);
+cmdOverlay.addEventListener("click", e => { if (e.target === cmdOverlay) closeCmd(); });
+
+async function tryLogin() {
+  passErr.style.display = "none";
+  passErr.textContent = "";
+  const entered = passInput.value.trim();
+
+  let storedPass = null;
+  try {
+    // Firebaseの "pass" ノードから直接読む
+    const snap = await get(ref(db, "pass"));
+    if (snap.exists()) {
+      storedPass = String(snap.val()).trim();
+    }
+  } catch(e) {
+    passErr.textContent = "Firebase読み取りエラー: " + e.message;
+    passErr.style.display = "block";
+    return;
+  }
+
+  if (storedPass === null) {
+    passErr.textContent = 'Firebaseに "pass" データが見つかりません。';
+    passErr.style.display = "block";
+    return;
+  }
+
+  if (entered === storedPass) {
+    isAdmin = true;
+    closePass();
+    adminBtn.textContent = "CMD";
+    initCmdMessages();
+    openCmd();
+  } else {
+    passErr.textContent = "パスワードが正しくありません。";
+    passErr.style.display = "block";
+    passInput.value = "";
+    passInput.focus();
+  }
+}
+
+
+// ---- CANDO list (fixed) ----
+const CANDO = new Set(["can","will","may","must","should","might","could","would","are","is","do","did","does","was","were"]);
+
+// ---- hani helper ----
+// haniリストは区切りの終わり番号を昇順で記録（例: [10, 20, 35]）
+// 範囲指定「from〜to」= haniのfrom番目〜to番目の区間
+// 区間内のbumpou/wordsエントリ番号を返す
+// bumpou/wordsとhaniは同じ区切りで管理されている前提:
+//   hani[i]番目 = そのセクションの終わりのエントリ番号（1-based, bumpou/words共通）
+async function resolveHaniRange() {
+  // ページ指定を読む
+  const fromVal  = document.getElementById("pageFrom").value.trim();
+  const toVal    = document.getElementById("pageTo").value.trim();
+  const indivVal = document.getElementById("pageIndiv").value.trim();
+
+  // 何も指定なし → フィルタなし（全件）
+  if (!fromVal && !toVal && !indivVal) return null;
+
+  const haniList = await getList("hani");
+  if (!haniList.length) return null;
+
+  // haniを数値配列に変換
+  const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
+  if (!haniNums.length) return null;
+
+  // 対象のhaniインデックス集合（1-based → 0-based）
+  let haniIndices = new Set();
+
+  if (fromVal || toVal) {
+    const f = fromVal ? Math.max(1, parseInt(fromVal)) : 1;
+    const t = toVal   ? Math.min(haniNums.length, parseInt(toVal)) : haniNums.length;
+    for (let i = f; i <= t; i++) haniIndices.add(i - 1); // 0-based
+  }
+
+  if (indivVal) {
+    indivVal.split(",").forEach(s => {
+      const n = parseInt(s.trim());
+      if (!isNaN(n) && n >= 1 && n <= haniNums.length) haniIndices.add(n - 1);
+    });
+  }
+
+  if (!haniIndices.size) return null;
+
+  // 各haniインデックスが担当するエントリ番号範囲（1-based）を計算
+  // haniNums[i] = そのセクションの最後のエントリ番号
+  // セクションiの開始 = haniNums[i-1]+1（i=0なら1）
+  const entrySet = new Set();
+  const sortedIdx = [...haniIndices].sort((a,b) => a-b);
+  for (const idx of sortedIdx) {
+    const start = idx === 0 ? 1 : haniNums[idx - 1] + 1;
+    const end   = haniNums[idx];
+    for (let e = start; e <= end; e++) entrySet.add(e);
+  }
+  return entrySet; // nullなら全件、Setなら対象エントリ番号（1-based）
+}
+
+// ---- Check function ----
+document.getElementById("checkBtn").addEventListener("click", async () => {
+  const text = document.getElementById("mainText").value;
+  if (!text.trim()) return;
+
+  // bwitemsから bumpou/words を分離取得
+  const bwRaw = await getRawList("bwitems");
+
+  // haniによるエントリフィルタ（bwitems全体のインデックスで管理）
+  const entryFilter = await resolveHaniRange();
+  const filteredBW = entryFilter
+    ? bwRaw.filter((_, i) => entryFilter.has(i + 1))
+    : bwRaw;
+
+  const bumpouRaw = filterBW(filteredBW, "bumpou");
+  const wordsList  = filterBW(filteredBW, "words");
+  const filteredBumpou = bumpouRaw;
+  const filteredWords  = wordsList;
+
+  // テキストをトークンに分割（句読点除去、小文字化）
+  const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
+
+  // bumpou処理: !irregular! を確認し、skipフラグを立てる
+  // 各エントリ: { term: string, irregular: bool }
+  const bumpouEntries = filteredBumpou.map(raw => {
+    const s = String(raw);
+    if (s.endsWith("!irregular!")) {
+      return { term: s.replace(/!irregular!$/, "").trim().toLowerCase(), irregular: true };
+    }
+    return { term: s.trim().toLowerCase(), irregular: false };
+  }).filter(e => e.term);
+
+  // テキスト内のトークンセット
+  const tokenSet = new Set(textTokens);
+
+  // bumpouカウント: 各termがtextに含まれるか
+  // !irregular! の場合: その語の直後（テキスト上）にcandoが来たらスキップ
+  // ただし「含まれるか」はset検索なので、直後チェックはトークン配列で行う
+  const bumpouMatched = [];
+  const bumpouSkipped = [];
+
+  for (const entry of bumpouEntries) {
+    const term = entry.term;
+    const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
+
+    // multi-word対応: テキストに連続して含まれるか
+    let found = false;
+    let followedByCando = false;
+
+    if (termTokens.length === 1) {
+      found = tokenSet.has(term);
+      if (found && entry.irregular) {
+        // 全出現を確認: 1つでもCANDO以外が直後にあればカウント
+        let hasNonCando = false;
+        let hasAnyCando = false;
+        for (let i = 0; i < textTokens.length; i++) {
+          if (textTokens[i] === term) {
+            const next = textTokens[i + 1];
+            if (next && CANDO.has(next)) { hasAnyCando = true; }
+            else { hasNonCando = true; }
+          }
+        }
+        followedByCando = !hasNonCando && hasAnyCando;
+      }
+    } else {
+      // multi-word phrase
+      const joined = textTokens.join(" ");
+      const phrase = termTokens.join(" ");
+      found = joined.includes(phrase);
+      if (found && entry.irregular) {
+        // 全出現を確認
+        let hasNonCando = false;
+        let hasAnyCando = false;
+        let searchFrom = 0;
+        while (true) {
+          const idx = joined.indexOf(phrase, searchFrom);
+          if (idx === -1) break;
+          const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
+          if (after && CANDO.has(after)) { hasAnyCando = true; }
+          else { hasNonCando = true; }
+          searchFrom = idx + 1;
+        }
+        followedByCando = !hasNonCando && hasAnyCando;
+      }
+    }
+
+    if (!found) continue;
+    if (entry.irregular && followedByCando) {
+      bumpouSkipped.push(term);
+    } else {
+      bumpouMatched.push(term);
+    }
+  }
+
+  // wordsカウント
+  const wordsMatched = [];
+  for (const raw of filteredWords) {
+    const term = String(raw).trim().toLowerCase();
+    if (!term) continue;
+    const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
+    let found = false;
+    if (termTokens.length === 1) {
+      found = tokenSet.has(term);
+    } else {
+      found = textTokens.join(" ").includes(termTokens.join(" "));
+    }
+    if (found) wordsMatched.push(term);
+  }
+
+  // 結果表示
+  const resultDiv = document.getElementById("checkResult");
+  resultDiv.style.display = "flex";
+  resultDiv.style.flexDirection = "column";
+
+  const bumpouCount = bumpouMatched.length;
+  const wordsCount  = wordsMatched.length;
+
+  // ページ範囲の表示ラベル
+  let rangeLabel = "";
+  if (entryFilter) {
+    const haniList2 = await getList("hani");
+    const fromVal2 = document.getElementById("pageFrom").value.trim();
+    const toVal2   = document.getElementById("pageTo").value.trim();
+    const indivVal2 = document.getElementById("pageIndiv").value.trim();
+    if (fromVal2 || toVal2) rangeLabel = `範囲: hani ${fromVal2||"1"} 〜 ${toVal2||haniList2.length} （エントリ ${Math.min(...entryFilter)}〜${Math.max(...entryFilter)}）`;
+    else if (indivVal2) rangeLabel = `個別: hani ${indivVal2} （エントリ ${[...entryFilter].sort((a,b)=>a-b).join(", ")}）`;
+  } else {
+    rangeLabel = "全エントリ対象";
+  }
+
+  const totalPoints = bumpouCount + wordsCount * 2;
+
+  let html = `<div style="font-size:0.75rem;color:#9ca3af;margin-bottom:10px;">${escHtml(rangeLabel)}</div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;">
+    <div class="result-card">
+      <div class="rc-label">Grammar</div>
+      <div class="rc-count">${bumpouCount}</div>
+      <div class="rc-sub">× 1pt = ${bumpouCount}pt</div>
+    </div>
+    <div class="result-card">
+      <div class="rc-label">Key Words</div>
+      <div class="rc-count">${wordsCount}</div>
+      <div class="rc-sub">× 2pt = ${wordsCount * 2}pt</div>
+    </div>
+  </div>`;
+
+  if (bumpouMatched.length || bumpouSkipped.length) {
+    html += `<div class="result-matched">
+      <div class="rm-title">文法マッチ</div>
+      <div class="matched-tags">
+        ${bumpouMatched.map(t => `<span class="matched-tag">${escHtml(t)}</span>`).join("")}
+        ${bumpouSkipped.map(t => `<span class="matched-tag skip-tag">${escHtml(t)} (cando後→除外)</span>`).join("")}
+      </div>
+    </div>`;
+  }
+  if (wordsMatched.length) {
+    html += `<div class="result-matched">
+      <div class="rm-title">単語マッチ</div>
+      <div class="matched-tags">
+        ${wordsMatched.map(t => `<span class="matched-tag words-tag">${escHtml(t)}</span>`).join("")}
+      </div>
+    </div>`;
+  }
+
+  html += `<div style="margin-top:18px;padding-top:16px;border-top:1.5px solid #e5e7eb;display:flex;align-items:baseline;gap:10px;">
+    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9ca3af;">Total Points</div>
+    <div style="font-size:3rem;font-weight:900;color:#6366f1;line-height:1;">${totalPoints}</div>
+    <div style="font-size:1rem;font-weight:600;color:#6366f1;">pt</div>
+  </div>`;
+
+  resultDiv.innerHTML = html;
+});
+
+passEnter.addEventListener("click", tryLogin);
+passInput.addEventListener("keydown", e => { if (e.key === "Enter") tryLogin(); });
+
+// ---- Tab switching ----
+document.getElementById("tabChecker").addEventListener("click", () => switchTab("checker"));
+document.getElementById("tabLookup").addEventListener("click",  () => switchTab("lookup"));
+document.getElementById("tabWordlist").addEventListener("click", () => switchTab("wordlist"));
+
+function switchTab(tab) {
+  document.getElementById("panelChecker").style.display  = tab === "checker"  ? "" : "none";
+  document.getElementById("panelLookup").style.display   = tab === "lookup"   ? "" : "none";
+  document.getElementById("panelWordlist").style.display = tab === "wordlist" ? "" : "none";
+  document.getElementById("tabChecker").classList.toggle("active",  tab === "checker");
+  document.getElementById("tabLookup").classList.toggle("active",   tab === "lookup");
+  document.getElementById("tabWordlist").classList.toggle("active", tab === "wordlist");
+  if (tab === "wordlist") loadWordList();
+}
+
+async function loadWordList() {
+  const el = document.getElementById("wordlistContent");
+  el.innerHTML = '<div class="wl-loading">読み込み中...</div>';
+
+  const bwRaw  = await getRawList("bwitems");
+  const imiRaw = await getRawList("imi");
+  const haniRaw = await getRawList("hani");
+  const haniNums = haniRaw.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
+
+  // bwitemsを1-basedインデックスでセクション分け
+  // haniNums[i] = セクションiの最後のbwitemsインデックス(1-based)
+  // セクション分けしてテーブル生成
+  let rows = '<div class="wl-wrap"><table class="wl-table"><thead><tr><th>語</th><th>意味</th></tr></thead><tbody>';
+
+  let sectionIdx = 0; // 現在のhaniセクション
+  let nextBoundary = haniNums.length > 0 ? haniNums[0] : Infinity;
+
+  bwRaw.forEach((v, i) => {
+    const oneBasedIdx = i + 1;
+
+    // セクションヘッダーを挿入するか判定
+    // セクション0の開始 = index 1, セクション1の開始 = haniNums[0]+1 ...
+    const isFirstInSection =
+      (sectionIdx === 0 && oneBasedIdx === 1) ||
+      (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1);
+
+    if (isFirstInSection) {
+      rows += `<tr class="wl-section-row"><td colspan="2">${sectionIdx + 1}ページ目</td></tr>`;
+    }
+
+    // 語を取得
+    const s = String(v);
+    let term = null;
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/!irregular!$/, "").trim();
+    else if (s.startsWith("words:")) term = s.slice(6).trim();
+    if (!term) {
+      // セクション境界の更新
+      if (oneBasedIdx >= nextBoundary) {
+        sectionIdx++;
+        nextBoundary = haniNums[sectionIdx] ?? Infinity;
+      }
+      return;
+    }
+
+    const imi = imiRaw[i] ? String(imiRaw[i]).trim() : "";
+    rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imi)}</td></tr>`;
+
+    // セクション境界の更新
+    if (oneBasedIdx >= nextBoundary) {
+      sectionIdx++;
+      nextBoundary = haniNums[sectionIdx] ?? Infinity;
+    }
+  });
+
+  rows += '</tbody></table></div>';
+  el.innerHTML = rows;
+}
+
+// ---- Look up ----
+async function doLookup() {
+  const query = document.getElementById("lookupInput").value.trim().toLowerCase();
+  const resultDiv = document.getElementById("lookupResult");
+  if (!query) return;
+
+  // bwitemsから全件取得
+  const bwRaw = await getRawList("bwitems");
+  const imiRaw = await getRawList("imi");
+  const reibunRaw = await getRawList("reibun");
+
+  // 入力語にマッチするbwitemsのインデックスを全て探す
+  const matches = [];
+  bwRaw.forEach((v, i) => {
+    const s = String(v);
+    let kind = null, term = null;
+    if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/!irregular!$/, "").trim().toLowerCase(); }
+    else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).trim().toLowerCase(); }
+    if (term === query) matches.push({ kind, term: s.startsWith("bumpou:") ? s.slice(7) : s.slice(6), idx: i });
+  });
+
+  resultDiv.style.display = "flex";
+
+  if (!matches.length) {
+    resultDiv.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" はリストに見つかりませんでした。</div>`;
+    return;
+  }
+
+  let html = matches.map((m, mi) => {
+    const imi    = imiRaw[m.idx]    ? String(imiRaw[m.idx]).trim()    : "";
+    const reibun = reibunRaw[m.idx] ? String(reibunRaw[m.idx]).trim() : "";
+    const kindLabel = m.kind === "bumpou" ? "文法" : "単語";
+    const termDisplay = m.term.replace(/!irregular!$/, "");
+    return `
+      ${mi > 0 ? '<hr class="lookup-divider">' : ""}
+      <div class="lookup-word">${escHtml(termDisplay)} <span style="font-size:0.7rem;font-weight:600;color:#9ca3af;letter-spacing:0.08em;">${kindLabel}</span></div>
+      <div>
+        <div class="lookup-kind">意味</div>
+        <div class="lookup-val">${imi ? escHtml(imi) : '<span class="dont-make">—</span>'}</div>
+      </div>
+      <div>
+        <div class="lookup-kind">例文</div>
+        <div class="lookup-val ${reibun ? "" : "dont-make"}">${reibun ? escHtml(reibun) : "Don't make"}</div>
+      </div>
+    `;
+  }).join("");
+
+  resultDiv.innerHTML = html;
+}
+
+document.getElementById("lookupBtn").addEventListener("click", doLookup);
+document.getElementById("lookupInput").addEventListener("keydown", e => { if (e.key === "Enter") doLookup(); });
+</script>
+</body>
+</html>
