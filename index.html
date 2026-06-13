@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EChecker</title>
+<title>単語・文法チェッカー</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -1037,9 +1037,10 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   }
 
   const totalPoints = bumpouCount + wordsCount * 2;
+  const wordCount = textTokens.length;
 
   let html = `<div style="font-size:0.75rem;color:#9ca3af;margin-bottom:10px;">${escHtml(rangeLabel)}</div>
-  <div style="display:flex;gap:24px;flex-wrap:wrap;">
+  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">
     <div class="result-card">
       <div class="rc-label">Grammar</div>
       <div class="rc-count">${bumpouCount}</div>
@@ -1050,20 +1051,24 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
       <div class="rc-count">${wordsCount}</div>
       <div class="rc-sub">× 2pt = ${wordsCount * 2}pt</div>
     </div>
+    <div class="result-card">
+      <div class="rc-label">語数</div>
+      <div class="rc-count" style="font-size:1.4rem;">${wordCount}</div>
+      <div class="rc-sub">words</div>
+    </div>
   </div>`;
 
-  if (bumpouMatched.length || bumpouSkipped.length) {
+  if (bumpouMatched.length) {
     html += `<div class="result-matched">
-      <div class="rm-title">文法マッチ</div>
+      <div class="rm-title">Grammar</div>
       <div class="matched-tags">
         ${bumpouMatched.map(t => `<span class="matched-tag">${escHtml(t)}</span>`).join("")}
-        ${bumpouSkipped.map(t => `<span class="matched-tag skip-tag">${escHtml(t)} (cando後→除外)</span>`).join("")}
       </div>
     </div>`;
   }
   if (wordsMatched.length) {
     html += `<div class="result-matched">
-      <div class="rm-title">単語マッチ</div>
+      <div class="rm-title">Key Words</div>
       <div class="matched-tags">
         ${wordsMatched.map(t => `<span class="matched-tag words-tag">${escHtml(t)}</span>`).join("")}
       </div>
