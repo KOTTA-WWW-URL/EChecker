@@ -497,9 +497,7 @@
   <!-- ページ指定 -->
   <div class="page-section">
     <div class="label">範囲指定</div>
-    <div class="range-container" id="rangeContainer">
-      <!-- 範囲行がここに追加される -->
-    </div>
+    <div class="range-container" id="rangeContainer"></div>
     <button class="btn-add-range" id="addRangeBtn" style="margin-top:10px;">+ 範囲を追加</button>
   </div>
 
@@ -594,7 +592,7 @@ function parseArgs(str) {
   const tokens = [];
   let cur = "", inQ = false;
   for (const c of str) {
-    if (c === '"') { inQ = !inQ; }
+    if (c === '"') inQ = !inQ;
     else if (c === ' ' && !inQ) { if (cur) tokens.push(cur); cur = ""; }
     else cur += c;
   }
@@ -761,16 +759,14 @@ async function initHaniUI() {
   globalHaniNames = await getRawList("haniname");
   const container = document.getElementById("rangeContainer");
   container.innerHTML = "";
-  addRangeRow(); // 最初の一行
+  addRangeRow();
 }
 
 function addRangeRow() {
   const container = document.getElementById("rangeContainer");
   const row = document.createElement("div");
   row.className = "range-row";
-  
   let options = globalHaniNames.map((name, i) => `<option value="${i+1}">${escHtml(name)}</option>`).join("");
-  
   row.innerHTML = `
     <div class="range-select-group">
       <select class="range-select start-hani">${options}</select>
@@ -779,14 +775,11 @@ function addRangeRow() {
     </div>
     <button class="btn-remove-range">✕</button>
   `;
-  
   row.querySelector(".btn-remove-range").addEventListener("click", () => {
     if (container.children.length > 1) row.remove();
   });
-  
   container.appendChild(row);
 }
-
 document.getElementById("addRangeBtn").addEventListener("click", addRangeRow);
 
 // ---- CANDO & Conjugation ----
@@ -799,6 +792,15 @@ function getConjugations(base, doubleConsonant) {
   else if (/e$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base + "d"); }
   else if (/[^aeiou]y$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base.slice(0, -1) + "ied"); }
   else { forms.add(base + "ing"); forms.add(base + "ed"); }
+  if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) forms.add(base + "es");
+  else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
+  else forms.add(base + "s");
+  return forms;
+}
+
+// 名詞の複数形生成
+function getPlurals(base) {
+  const forms = new Set([base]);
   if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) forms.add(base + "es");
   else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
   else forms.add(base + "s");
@@ -822,13 +824,11 @@ async function resolveMultipleRanges() {
   const haniList = await getList("hani");
   if (!haniList.length) return null;
   const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
-
   let entrySet = new Set();
   rows.forEach(row => {
     const startIdx = parseInt(row.querySelector(".start-hani").value) - 1;
     const endIdx   = parseInt(row.querySelector(".end-hani").value) - 1;
-    const s = Math.min(startIdx, endIdx);
-    const e = Math.max(startIdx, endIdx);
+    const s = Math.min(startIdx, endIdx), e = Math.max(startIdx, endIdx);
     for (let i = s; i <= e; i++) {
       const startEntry = i === 0 ? 1 : haniNums[i - 1] + 1;
       const endEntry   = haniNums[i];
@@ -841,17 +841,13 @@ async function resolveMultipleRanges() {
 document.getElementById("checkBtn").addEventListener("click", async () => {
   const text = document.getElementById("mainText").value;
   if (!text.trim()) return;
-
-  const bwRaw = await getRawList("bwitems");
-  const entryFilter = await resolveMultipleRanges();
+  const bwRaw = await getRawList("bwitems"), entryFilter = await resolveMultipleRanges();
   const filteredBW = entryFilter ? bwRaw.filter((_, i) => entryFilter.has(i + 1)) : bwRaw;
-
-  const bumpouRaw = filterBW(filteredBW, "bumpou");
-  const wordsRaw  = filterBW(filteredBW, "words");
+  const bumpouRaw = filterBW(filteredBW, "bumpou"), wordsRaw = filterBW(filteredBW, "words");
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const tokenSet = new Set(textTokens);
 
-  function performCheck(rawList) {
+  function performCheck(rawList, isWordsList) {
     const matched = [];
     rawList.map(parseTerm).filter(e => e.term).forEach(entry => {
       const term = entry.term;
@@ -860,8 +856,14 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
       if (entry.conjugate) {
         const forms = getConjugations(term, entry.doubleConsonant);
         for (const f of forms) { if (tokenSet.has(f)) { found = true; break; } }
-      } else if (termTokens.length === 1) found = tokenSet.has(term);
-      else found = textTokens.join(" ").includes(termTokens.join(" "));
+      } else if (termTokens.length === 1) {
+        found = tokenSet.has(term);
+        // wordsリストの場合、タグがなくても複数形をチェック
+        if (!found && isWordsList) {
+          const plurals = getPlurals(term);
+          for (const p of plurals) { if (tokenSet.has(p)) { found = true; break; } }
+        }
+      } else found = textTokens.join(" ").includes(termTokens.join(" "));
 
       if (found) {
         if (entry.irregular) {
@@ -886,8 +888,7 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
           if (!valid) return;
         }
         if (entry.commaRequired) {
-          const rawLower = text.toLowerCase();
-          const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const rawLower = text.toLowerCase(), escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) return;
         }
         matched.push(term);
@@ -896,13 +897,9 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     return matched;
   }
 
-  const bumpouMatched = performCheck(bumpouRaw);
-  const wordsMatched  = performCheck(wordsRaw);
-
-  const resultDiv = document.getElementById("checkResult");
-  resultDiv.style.display = "flex";
-  resultDiv.style.flexDirection = "column";
-  
+  const bumpouMatched = performCheck(bumpouRaw, false);
+  const wordsMatched  = performCheck(wordsRaw, true);
+  const resultDiv = document.getElementById("checkResult"); resultDiv.style.display = "flex"; resultDiv.style.flexDirection = "column";
   const bumpouCount = bumpouMatched.length, wordsCount = wordsMatched.length;
   const totalPoints = bumpouCount + wordsCount * 2, wordCount = textTokens.length;
 
@@ -934,20 +931,16 @@ document.getElementById("tabWordlist").addEventListener("click", () => switchTab
 async function loadWordList() {
   const el = document.getElementById("wordlistContent");
   el.innerHTML = '<div class="wl-loading">読み込み中...</div>';
-  const bwRaw = await getRawList("bwitems"), imiRaw = await getRawList("imi"), haniRaw = await getRawList("hani");
+  const bwRaw = await getRawList("bwitems"), imiRaw = await getRawList("imi"), haniRaw = await getRawList("hani"), haniNames = await getRawList("haniname");
   const haniNums = haniRaw.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
-  const haniNames = await getRawList("haniname");
-
   let rows = '<div class="wl-wrap"><table class="wl-table"><thead><tr><th>語</th><th>意味</th></tr></thead><tbody>';
   let sectionIdx = 0, nextBoundary = haniNums.length > 0 ? haniNums[0] : Infinity;
-
   bwRaw.forEach((v, i) => {
     const oneBasedIdx = i + 1;
     if ((sectionIdx === 0 && oneBasedIdx === 1) || (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1)) {
       rows += `<tr class="wl-section-row"><td colspan="2">${escHtml(haniNames[sectionIdx] || (sectionIdx + 1) + "ページ目")}</td></tr>`;
     }
-    const s = String(v);
-    let term = null;
+    const s = String(v); let term = null;
     if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
@@ -986,15 +979,12 @@ adminBtn.addEventListener("click", () => { if (isAdmin) openCmd(); else openPass
 document.getElementById("passCancel").addEventListener("click", closePass);
 document.getElementById("passEnter").addEventListener("click", tryLogin);
 document.getElementById("cmdClose").addEventListener("click", closeCmd);
-
 function openPass() { passInput.value = ""; document.getElementById("passErr").style.display = "none"; passOverlay.classList.add("open"); setTimeout(() => passInput.focus(), 60); }
 function closePass() { passOverlay.classList.remove("open"); }
 function openCmd() { document.getElementById("cmdOverlay").classList.add("open"); setTimeout(() => cmdInput.focus(), 60); }
 function closeCmd() { document.getElementById("cmdOverlay").classList.remove("open"); }
-
 async function tryLogin() {
-  const entered = passInput.value.trim();
-  const snap = await get(ref(db, "pass"));
+  const entered = passInput.value.trim(), snap = await get(ref(db, "pass"));
   if (snap.exists() && entered === String(snap.val()).trim()) {
     isAdmin = true; closePass(); adminBtn.textContent = "CMD"; initCmdMessages(); openCmd();
   } else {
@@ -1002,7 +992,6 @@ async function tryLogin() {
   }
 }
 
-// Initial Load
 initHaniUI();
 </script>
 </body>
