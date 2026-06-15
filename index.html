@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>単語・文法チェッカー</title>
+<title>EChecker</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -458,7 +458,7 @@
 <body>
 
 <header>
-  <div class="logo">単語・文法チェッカー</div>
+  <div class="logo">EChecker</div>
 </header>
 
 <main>
@@ -632,7 +632,7 @@ async function addToBW(pos, kind, val) {
     arr.push(entry);
   } else {
     const i = parseInt(pos);
-    arr.splice(isNaN(i) || i < 1 ? arr.length : i - 1, 0, entry);
+    arr.splice(isNaN(i) || i < 0 ? arr.length : i, 0, entry);
   }
   await saveRawList("bwitems", arr);
   return arr.length;
@@ -675,7 +675,7 @@ async function addTo(pos, name, val) {
     arr.push(val);
   } else {
     const i = parseInt(pos);
-    arr.splice(isNaN(i) || i < 1 ? arr.length : i - 1, 0, val);
+    arr.splice(isNaN(i) || i < 0 ? arr.length : i, 0, val);
   }
   await saveRawList(name, arr);
 }
@@ -746,11 +746,11 @@ async function handleCmd(raw) {
       const bwArr  = await getRawList("bwitems");
       const imiArr = await getRawList("imi");
       const rbArr  = await getRawList("reibun");
-      const idx = posRm === "f" ? bwArr.length : parseInt(posRm);
-      if (isNaN(idx) || idx < 1 || idx > bwArr.length) { print(`エラー: 範囲外 (1–${bwArr.length})`, "cmd-err"); return; }
-      const removedBW  = bwArr.splice(idx - 1, 1)[0];
-      const removedImi = imiArr.splice(idx - 1, 1)[0];
-      const removedRb  = rbArr.splice(idx - 1, 1)[0];
+      const idx = posRm === "f" ? bwArr.length - 1 : parseInt(posRm);
+      if (isNaN(idx) || idx < 0 || idx >= bwArr.length) { print(`エラー: 範囲外 (0–${bwArr.length - 1})`, "cmd-err"); return; }
+      const removedBW  = bwArr.splice(idx, 1)[0];
+      const removedImi = imiArr.splice(idx, 1)[0];
+      const removedRb  = rbArr.splice(idx, 1)[0];
       await saveRawList("bwitems", bwArr);
       await saveRawList("imi", imiArr);
       await saveRawList("reibun", rbArr);
@@ -759,9 +759,9 @@ async function handleCmd(raw) {
     }
     if (!LISTS.includes(name)) { print(`エラー: 不明なリスト "${escHtml(name)}"`, "cmd-err"); return; }
     const arr = await getList(name);
-    const idx = posRm === "f" ? arr.length : parseInt(posRm);
-    if (isNaN(idx) || idx < 1 || idx > arr.length) { print(`エラー: 範囲外 (1–${arr.length})`, "cmd-err"); return; }
-    const removed = arr.splice(idx - 1, 1)[0];
+    const idx = posRm === "f" ? arr.length - 1 : parseInt(posRm);
+    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外 (0–${arr.length - 1})`, "cmd-err"); return; }
+    const removed = arr.splice(idx, 1)[0];
     await saveList(name, arr);
     print(`削除: [${name}] #${idx} "${escHtml(removed)}"`, "cmd-ok");
     return;
@@ -780,12 +780,12 @@ async function handleCmd(raw) {
       const bwArr  = await getRawList("bwitems");
       const imiArr = await getRawList("imi");
       const rbArr  = await getRawList("reibun");
-      const idx = posR === "f" ? bwArr.length : parseInt(posR);
-      if (isNaN(idx) || idx < 1 || idx > bwArr.length) { print(`エラー: 範囲外 (1–${bwArr.length})`, "cmd-err"); return; }
-      const oldBW = bwArr[idx - 1];
-      bwArr[idx - 1]  = mainList + ":" + mainVal;
-      imiArr[idx - 1] = imiVal;
-      rbArr[idx - 1]  = reibunVal;
+      const idx = posR === "f" ? bwArr.length - 1 : parseInt(posR);
+      if (isNaN(idx) || idx < 0 || idx >= bwArr.length) { print(`エラー: 範囲外 (0–${bwArr.length - 1})`, "cmd-err"); return; }
+      const oldBW = bwArr[idx];
+      bwArr[idx]  = mainList + ":" + mainVal;
+      imiArr[idx] = imiVal;
+      rbArr[idx]  = reibunVal;
       await saveRawList("bwitems", bwArr);
       await saveRawList("imi", imiArr);
       await saveRawList("reibun", rbArr);
@@ -795,10 +795,10 @@ async function handleCmd(raw) {
     const newVal = tokens.slice(3).join(" ");
     if (!LISTS.includes(name)) { print(`エラー: 不明なリスト "${escHtml(name)}"`, "cmd-err"); return; }
     const arr = await getList(name);
-    const idx = posR === "f" ? arr.length : parseInt(posR);
-    if (isNaN(idx) || idx < 1 || idx > arr.length) { print(`エラー: 範囲外 (1–${arr.length})`, "cmd-err"); return; }
-    const old = arr[idx - 1];
-    arr[idx - 1] = newVal;
+    const idx = posR === "f" ? arr.length - 1 : parseInt(posR);
+    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外 (0–${arr.length - 1})`, "cmd-err"); return; }
+    const old = arr[idx];
+    arr[idx] = newVal;
     await saveList(name, arr);
     print(`置換: [${name}] #${idx}: "${escHtml(old)}" → "${escHtml(newVal)}"`, "cmd-ok");
     return;
