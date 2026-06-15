@@ -918,22 +918,38 @@ async function resolveHaniRange() {
 function getConjugations(base, doubleConsonant) {
   const forms = new Set([base]);
   const lastChar = base.slice(-1);
+  
+  // ing形
   if (doubleConsonant) {
     forms.add(base + lastChar + "ing");
-    forms.add(base + lastChar + "ed");
   } else if (/e$/.test(base)) {
     forms.add(base.slice(0, -1) + "ing");
-    forms.add(base + "d");
   } else if (/[^aeiou]y$/.test(base)) {
-    forms.add(base.slice(0, -1) + "ied");
     forms.add(base.slice(0, -1) + "ing");
   } else {
     forms.add(base + "ing");
+  }
+
+  // 過去形・過去分詞
+  if (doubleConsonant) {
+    forms.add(base + lastChar + "ed");
+  } else if (/e$/.test(base)) {
+    forms.add(base + "d");
+  } else if (/[^aeiou]y$/.test(base)) {
+    forms.add(base.slice(0, -1) + "ied");
+  } else {
     forms.add(base + "ed");
   }
-  if (/[sxzh]$/.test(base)) forms.add(base + "es");
-  else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
-  else forms.add(base + "s");
+
+  // 三単現
+  if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) {
+    forms.add(base + "es");
+  } else if (/[^aeiou]y$/.test(base)) {
+    forms.add(base.slice(0, -1) + "ies");
+  } else {
+    forms.add(base + "s");
+  }
+  
   return forms;
 }
 
@@ -951,6 +967,7 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const bumpouRaw = filterBW(filteredBW, "bumpou");
   const wordsList  = filterBW(filteredBW, "words");
 
+  // トークン化: 記号を保持しつつ分割
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const tokenSet = new Set(textTokens);
 
@@ -984,11 +1001,17 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     const term = entry.term;
     const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
     let found = false;
+    let matchedForm = term;
 
     if (entry.conjugate) {
-      // 変化形と原形の両方をチェック
       const forms = getConjugations(term, entry.doubleConsonant);
-      for (const f of forms) { if (tokenSet.has(f)) { found = true; break; } }
+      for (const f of forms) { 
+        if (tokenSet.has(f)) { 
+          found = true; 
+          matchedForm = f;
+          break; 
+        } 
+      }
     } else if (termTokens.length === 1) {
       found = tokenSet.has(term);
     } else {
@@ -1138,7 +1161,6 @@ async function loadWordList() {
 
     const s = String(v);
     let term = null;
-    // 表示時に記号を削除
     if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     else if (s.startsWith("words:")) term = s.slice(6).trim();
     
@@ -1171,7 +1193,6 @@ async function doLookup() {
   bwRaw.forEach((v, i) => {
     const s = String(v);
     let kind = null, term = null;
-    // 検索・マッチング時に記号を考慮
     if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
     else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).trim().toLowerCase(); }
     if (term === query) matches.push({ kind, term: s.startsWith("bumpou:") ? s.slice(7) : s.slice(6), idx: i });
@@ -1187,7 +1208,6 @@ async function doLookup() {
     const imi    = imiRaw[m.idx]    ? String(imiRaw[m.idx]).trim()    : "";
     const reibun = reibunRaw[m.idx] ? String(reibunRaw[m.idx]).trim() : "";
     const kindLabel = m.kind === "bumpou" ? "文法" : "単語";
-    // 表示時に記号を削除
     const termDisplay = m.term.replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "");
     return `
       ${mi > 0 ? '<hr class="lookup-divider">' : ""}
