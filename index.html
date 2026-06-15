@@ -891,73 +891,52 @@ const CANDO = new Set(["can","will","may","must","should","might","could","would
 // 区間内のbumpou/wordsエントリ番号を返す
 // bumpou/wordsとhaniは同じ区切りで管理されている前提:
 //   hani[i]番目 = そのセクションの終わりのエントリ番号（1-based, bumpou/words共通）
-// ---- haniname + page range UI ----
-let haniNames = [];
-let haniNumsCache = [];
-
-async function loadHaniNames() {
-  const haniList     = await getRawList("hani");
-  const haniNameList = await getRawList("haniname");
-  haniNumsCache = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
-  haniNames = haniNumsCache.map((_, i) => String(haniNameList[i] || ("Page " + (i + 1))).trim());
-}
-
-function buildSelect(selectedIdx) {
-  let html = '<option value="">—</option>';
-  haniNames.forEach(function(name, i) {
-    const sel = i === selectedIdx ? " selected" : "";
-    html += '<option value="' + i + '"' + sel + '>' + name + '</option>';
-  });
-  return html;
-}
-
-function addRangeRow(fromIdx, toIdx) {
-  const row = document.createElement("div");
-  row.className = "page-range-row";
-  row.innerHTML =
-    '<select class="range-from">' + buildSelect(fromIdx) + '</select>' +
-    '<span class="page-dash">–</span>' +
-    '<select class="range-to">' + buildSelect(toIdx) + '</select>' +
-    '<button class="page-remove-btn" title="削除">✕</button>';
-  row.querySelector(".page-remove-btn").addEventListener("click", function() { row.remove(); });
-  document.getElementById("pageRanges").appendChild(row);
-}
-
-document.getElementById("pageAddBtn").addEventListener("click", async function() {
-  if (!haniNames.length) await loadHaniNames();
-  addRangeRow(undefined, undefined);
-});
-
 async function resolveHaniRange() {
-  const rows = document.querySelectorAll("#pageRanges .page-range-row");
-  if (!rows.length) return null;
+  // ページ指定を読む
+  const fromVal  = document.getElementById("pageFrom").value.trim();
+  const toVal    = document.getElementById("pageTo").value.trim();
+  const indivVal = document.getElementById("pageIndiv").value.trim();
 
-  if (!haniNumsCache.length) await loadHaniNames();
-  if (!haniNumsCache.length) return null;
+  // 何も指定なし → フィルタなし（全件）
+  if (!fromVal && !toVal && !indivVal) return null;
 
-  const haniIndices = new Set();
-  rows.forEach(function(row) {
-    const f = row.querySelector(".range-from").value;
-    const t = row.querySelector(".range-to").value;
-    if (f === "" && t === "") return;
-    const from = f !== "" ? parseInt(f) : 0;
-    const to   = t !== "" ? parseInt(t) : haniNumsCache.length - 1;
-    for (let i = from; i <= to; i++) haniIndices.add(i);
-  });
+  const haniList = await getList("hani");
+  if (!haniList.length) return null;
+
+  // haniを数値配列に変換
+  const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
+  if (!haniNums.length) return null;
+
+  // 対象のhaniインデックス集合（1-based → 0-based）
+  let haniIndices = new Set();
+
+  if (fromVal || toVal) {
+    const f = fromVal ? Math.max(1, parseInt(fromVal)) : 1;
+    const t = toVal   ? Math.min(haniNums.length, parseInt(toVal)) : haniNums.length;
+    for (let i = f; i <= t; i++) haniIndices.add(i - 1); // 0-based
+  }
+
+  if (indivVal) {
+    indivVal.split(",").forEach(s => {
+      const n = parseInt(s.trim());
+      if (!isNaN(n) && n >= 1 && n <= haniNums.length) haniIndices.add(n - 1);
+    });
+  }
 
   if (!haniIndices.size) return null;
 
+  // 各haniインデックスが担当するエントリ番号範囲（1-based）を計算
+  // haniNums[i] = そのセクションの最後のエントリ番号
+  // セクションiの開始 = haniNums[i-1]+1（i=0なら1）
   const entrySet = new Set();
-  const sortedIdx = [...haniIndices].sort(function(a, b) { return a - b; });
+  const sortedIdx = [...haniIndices].sort((a,b) => a-b);
   for (const idx of sortedIdx) {
-    const start = idx === 0 ? 1 : haniNumsCache[idx - 1] + 1;
-    const end   = haniNumsCache[idx];
+    const start = idx === 0 ? 1 : haniNums[idx - 1] + 1;
+    const end   = haniNums[idx];
     for (let e = start; e <= end; e++) entrySet.add(e);
   }
-  return entrySet;
+  return entrySet; // nullなら全件、Setなら対象エントリ番号（1-based）
 }
-
-loadHaniNames();
 
 // ---- Check function ----
 document.getElementById("checkBtn").addEventListener("click", async () => {
@@ -1137,16 +1116,12 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   // ページ範囲の表示ラベル
   let rangeLabel = "";
   if (entryFilter) {
-    const rows = document.querySelectorAll("#pageRanges .page-range-row");
-    const parts = [];
-    rows.forEach(function(row) {
-      const f = row.querySelector(".range-from").value;
-      const t = row.querySelector(".range-to").value;
-      const fn = f !== "" ? haniNames[parseInt(f)] : "—";
-      const tn = t !== "" ? haniNames[parseInt(t)] : "—";
-      parts.push(fn + " 〜 " + tn);
-    });
-    rangeLabel = parts.join(" / ");
+    const haniList2 = await getList("hani");
+    const fromVal2 = document.getElementById("pageFrom").value.trim();
+    const toVal2   = document.getElementById("pageTo").value.trim();
+    const indivVal2 = document.getElementById("pageIndiv").value.trim();
+    if (fromVal2 || toVal2) rangeLabel = `範囲: hani ${fromVal2||"1"} 〜 ${toVal2||haniList2.length} （エントリ ${Math.min(...entryFilter)}〜${Math.max(...entryFilter)}）`;
+    else if (indivVal2) rangeLabel = `個別: hani ${indivVal2} （エントリ ${[...entryFilter].sort((a,b)=>a-b).join(", ")}）`;
   } else {
     rangeLabel = "全エントリ対象";
   }
