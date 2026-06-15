@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>単語・文法チェッカー</title>
+<title>EChecker</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -458,7 +458,7 @@
 <body>
 
 <header>
-  <div class="logo">単語・文法チェッカー</div>
+  <div class="logo">English Checker</div>
 </header>
 
 <main>
@@ -933,9 +933,12 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const bumpouEntries = filteredBumpou.map(raw => {
     const s = String(raw);
     if (s.endsWith("!irregular!")) {
-      return { term: s.replace(/!irregular!$/, "").trim().toLowerCase(), irregular: true };
+      return { term: s.replace(/!irregular!$/, "").trim().toLowerCase(), irregular: true, commaRequired: false };
     }
-    return { term: s.trim().toLowerCase(), irregular: false };
+    if (s.endsWith("$irregular$")) {
+      return { term: s.replace(/\$irregular\$$/, "").trim().toLowerCase(), irregular: false, commaRequired: true };
+    }
+    return { term: s.trim().toLowerCase(), irregular: false, commaRequired: false };
   }).filter(e => e.term);
 
   // テキスト内のトークンセット
@@ -993,8 +996,19 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     }
 
     if (!found) continue;
+
+    // $irregular$: カンマが直前にあるかチェック
+    let precededByComma = false;
+    if (entry.commaRequired) {
+      const rawText = text.toLowerCase();
+      const commaPattern = new RegExp(",\s*" + term.replace(/[-']/g, "\$&"));
+      precededByComma = commaPattern.test(rawText);
+    }
+
     if (entry.irregular && followedByCando) {
-      bumpouSkipped.push(term);
+      // cando後→スキップ
+    } else if (entry.commaRequired && !precededByComma) {
+      // カンマなし→スキップ
     } else {
       bumpouMatched.push(term);
     }
