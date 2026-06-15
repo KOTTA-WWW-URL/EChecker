@@ -570,7 +570,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 const LISTS = ["bumpou", "hani", "words", "imi", "reibun"];
-const HARDCODED_PASS = "パスワード"; // Firebaseにpasswordがなければこれを使う
+const HARDCODED_PASS = "パスワード"; 
 let isAdmin = false;
 
 // ---- Helpers ----
@@ -590,9 +590,7 @@ function parseArgs(str) {
   return tokens;
 }
 
-// bumpouとwordsは Firebase上 lists/bwitems に統合
-// 各エントリは "bumpou:though" や "words:look" の形式
-const MERGED = ["bumpou", "words"]; // 統合対象
+const MERGED = ["bumpou", "words"]; 
 
 async function getRawList(name) {
   const snap = await get(ref(db, `lists/${name}`));
@@ -606,11 +604,8 @@ async function saveRawList(name, arr) {
   await set(ref(db, `lists/${name}`), arr);
 }
 
-// CMD用: bumpou/words → bwitems にプレフィックス付きで保存
-// それ以外は従来通り
 async function getList(name) {
   if (MERGED.includes(name)) {
-    // bwitemsから全件返す（showはどちらでも同じリストを表示）
     return getRawList("bwitems");
   }
   return getRawList(name);
@@ -623,9 +618,7 @@ async function saveList(name, arr) {
   return saveRawList(name, arr);
 }
 
-// bwitemsへのエントリ追加（プレフィックス付き）
 async function addToBW(pos, kind, val) {
-  // kind: "bumpou" or "words"
   const entry = kind + ":" + val;
   const arr = await getRawList("bwitems");
   if (pos === "f") {
@@ -638,7 +631,6 @@ async function addToBW(pos, kind, val) {
   return arr.length;
 }
 
-// bwitemsから特定kindのエントリのみ取得（Check用）
 function filterBW(arr, kind) {
   const prefix = kind + ":";
   return arr
@@ -708,8 +700,6 @@ async function handleCmd(raw) {
     const isAllw = listArg.toLowerCase() === "allw";
 
     if (isAllb || isAllw) {
-      // tokens[3], tokens[4], tokens[5] がそれぞれ mainVal, imiVal, reibunVal
-      // parseArgs が "" を処理済みなのでそのまま使う
       const mainVal   = tokens[3] || "";
       const imiVal    = tokens[4] || "";
       const reibunVal = tokens[5] || "";
@@ -850,7 +840,6 @@ async function tryLogin() {
 
   let storedPass = null;
   try {
-    // Firebaseの "pass" ノードから直接読む
     const snap = await get(ref(db, "pass"));
     if (snap.exists()) {
       storedPass = String(snap.val()).trim();
@@ -881,39 +870,29 @@ async function tryLogin() {
   }
 }
 
-
-// ---- CANDO list (fixed) ----
+// ---- CANDO list ----
 const CANDO = new Set(["can","will","may","must","should","might","could","would","are","is","do","did","does","was","were"]);
 
 // ---- hani helper ----
-// haniリストは区切りの終わり番号を昇順で記録（例: [10, 20, 35]）
-// 範囲指定「from〜to」= haniのfrom番目〜to番目の区間
-// 区間内のbumpou/wordsエントリ番号を返す
-// bumpou/wordsとhaniは同じ区切りで管理されている前提:
-//   hani[i]番目 = そのセクションの終わりのエントリ番号（1-based, bumpou/words共通）
 async function resolveHaniRange() {
-  // ページ指定を読む
   const fromVal  = document.getElementById("pageFrom").value.trim();
   const toVal    = document.getElementById("pageTo").value.trim();
   const indivVal = document.getElementById("pageIndiv").value.trim();
 
-  // 何も指定なし → フィルタなし（全件）
   if (!fromVal && !toVal && !indivVal) return null;
 
   const haniList = await getList("hani");
   if (!haniList.length) return null;
 
-  // haniを数値配列に変換
   const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
   if (!haniNums.length) return null;
 
-  // 対象のhaniインデックス集合（1-based → 0-based）
   let haniIndices = new Set();
 
   if (fromVal || toVal) {
     const f = fromVal ? Math.max(1, parseInt(fromVal)) : 1;
     const t = toVal   ? Math.min(haniNums.length, parseInt(toVal)) : haniNums.length;
-    for (let i = f; i <= t; i++) haniIndices.add(i - 1); // 0-based
+    for (let i = f; i <= t; i++) haniIndices.add(i - 1); 
   }
 
   if (indivVal) {
@@ -925,9 +904,6 @@ async function resolveHaniRange() {
 
   if (!haniIndices.size) return null;
 
-  // 各haniインデックスが担当するエントリ番号範囲（1-based）を計算
-  // haniNums[i] = そのセクションの最後のエントリ番号
-  // セクションiの開始 = haniNums[i-1]+1（i=0なら1）
   const entrySet = new Set();
   const sortedIdx = [...haniIndices].sort((a,b) => a-b);
   for (const idx of sortedIdx) {
@@ -935,7 +911,30 @@ async function resolveHaniRange() {
     const end   = haniNums[idx];
     for (let e = start; e <= end; e++) entrySet.add(e);
   }
-  return entrySet; // nullなら全件、Setなら対象エントリ番号（1-based）
+  return entrySet; 
+}
+
+// ---- Conjugation Helper ----
+function getConjugations(base, doubleConsonant) {
+  const forms = new Set([base]);
+  const lastChar = base.slice(-1);
+  if (doubleConsonant) {
+    forms.add(base + lastChar + "ing");
+    forms.add(base + lastChar + "ed");
+  } else if (/e$/.test(base)) {
+    forms.add(base.slice(0, -1) + "ing");
+    forms.add(base + "d");
+  } else if (/[^aeiou]y$/.test(base)) {
+    forms.add(base.slice(0, -1) + "ied");
+    forms.add(base.slice(0, -1) + "ing");
+  } else {
+    forms.add(base + "ing");
+    forms.add(base + "ed");
+  }
+  if (/[sxzh]$/.test(base)) forms.add(base + "es");
+  else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
+  else forms.add(base + "s");
+  return forms;
 }
 
 // ---- Check function ----
@@ -943,10 +942,7 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const text = document.getElementById("mainText").value;
   if (!text.trim()) return;
 
-  // bwitemsから bumpou/words を分離取得
   const bwRaw = await getRawList("bwitems");
-
-  // haniによるエントリフィルタ（bwitems全体のインデックスで管理）
   const entryFilter = await resolveHaniRange();
   const filteredBW = entryFilter
     ? bwRaw.filter((_, i) => entryFilter.has(i + 1))
@@ -954,181 +950,111 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
 
   const bumpouRaw = filterBW(filteredBW, "bumpou");
   const wordsList  = filterBW(filteredBW, "words");
-  const filteredBumpou = bumpouRaw;
-  const filteredWords  = wordsList;
 
-  // テキストをトークンに分割（句読点除去、小文字化）
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
-
-  // bumpou処理: !irregular! を確認し、skipフラグを立てる
-  // 各エントリ: { term: string, irregular: bool }
-  const bumpouEntries = filteredBumpou.map(raw => {
-    const s = String(raw);
-    if (s.endsWith("!irregular!")) {
-      return { term: s.replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(), irregular: true, commaRequired: false, conjugate: false };
-    }
-    if (s.endsWith("$irregular$")) {
-      return { term: s.replace(/\$irregular\$$/, "").trim().toLowerCase(), irregular: false, commaRequired: true, conjugate: false };
-    }
-    if (s.endsWith("%dd%")) {
-      return { term: s.replace(/%dd%$/, "").trim().toLowerCase(), irregular: false, commaRequired: false, conjugate: true, doubleConsonant: true };
-    }
-    if (s.endsWith("%d%")) {
-      return { term: s.replace(/%d%$/, "").trim().toLowerCase(), irregular: false, commaRequired: false, conjugate: true, doubleConsonant: false };
-    }
-    return { term: s.trim().toLowerCase(), irregular: false, commaRequired: false, conjugate: false, doubleConsonant: false };
-  }).filter(e => e.term);
-
-  // 規則動詞の変化形を生成
-  function getConjugations(base, doubleConsonant) {
-    const forms = new Set([base]);
-    const lastChar = base.slice(-1);
-    // ing形
-    if (doubleConsonant) {
-      forms.add(base + lastChar + "ing"); // run→running
-    } else if (/e$/.test(base)) {
-      forms.add(base.slice(0, -1) + "ing"); // love→loving
-    } else {
-      forms.add(base + "ing");
-    }
-    // 過去形・過去分詞
-    if (doubleConsonant) {
-      forms.add(base + "ed"); // run→runed
-    } else if (/e$/.test(base)) {
-      forms.add(base + "d"); // love→loved
-    } else if (/[^aeiou]y$/.test(base)) {
-      forms.add(base.slice(0, -1) + "ied"); // study→studied
-    } else {
-      forms.add(base + "ed");
-    }
-    // 三単現
-    if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) {
-      forms.add(base + "es"); // watch→watches
-    } else if (/[^aeiou]y$/.test(base)) {
-      forms.add(base.slice(0, -1) + "ies"); // study→studies
-    } else {
-      forms.add(base + "s");
-    }
-    return forms;
-  }
-
-  // テキスト内のトークンセット
   const tokenSet = new Set(textTokens);
 
-  // bumpouカウント: 各termがtextに含まれるか
-  // !irregular! の場合: その語の直後（テキスト上）にcandoが来たらスキップ
-  // ただし「含まれるか」はset検索なので、直後チェックはトークン配列で行う
-  const bumpouMatched = [];
-  const bumpouSkipped = [];
+  const bumpouEntries = bumpouRaw.map(raw => {
+    const s = String(raw);
+    let term = s.trim().toLowerCase();
+    let irregular = false;
+    let commaRequired = false;
+    let conjugate = false;
+    let doubleConsonant = false;
 
+    if (term.endsWith("!irregular!")) {
+      term = term.replace(/!irregular!$/, "").trim();
+      irregular = true;
+    } else if (term.endsWith("$irregular$")) {
+      term = term.replace(/\$irregular\$$/, "").trim();
+      commaRequired = true;
+    } else if (term.endsWith("%dd%")) {
+      term = term.replace(/%dd%$/, "").trim();
+      conjugate = true;
+      doubleConsonant = true;
+    } else if (term.endsWith("%d%")) {
+      term = term.replace(/%d%$/, "").trim();
+      conjugate = true;
+    }
+    return { term, irregular, commaRequired, conjugate, doubleConsonant };
+  }).filter(e => e.term);
+
+  const bumpouMatched = [];
   for (const entry of bumpouEntries) {
     const term = entry.term;
     const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
-
-    // multi-word対応: テキストに連続して含まれるか
     let found = false;
-    let followedByCando = false;
 
     if (entry.conjugate) {
+      // 変化形と原形の両方をチェック
       const forms = getConjugations(term, entry.doubleConsonant);
-      for (const f of forms) {
-        if (tokenSet.has(f)) { found = true; break; }
-      }
+      for (const f of forms) { if (tokenSet.has(f)) { found = true; break; } }
     } else if (termTokens.length === 1) {
       found = tokenSet.has(term);
-      if (found && entry.irregular) {
-        // 全出現を確認: 1つでもCANDO以外が直後にあればカウント
-        let hasNonCando = false;
-        let hasAnyCando = false;
-        for (let i = 0; i < textTokens.length; i++) {
-          if (textTokens[i] === term) {
-            const next = textTokens[i + 1];
-            if (next && CANDO.has(next)) { hasAnyCando = true; }
-            else { hasNonCando = true; }
-          }
-        }
-        followedByCando = !hasNonCando && hasAnyCando;
-      }
     } else {
-      // multi-word phrase
       const joined = textTokens.join(" ");
       const phrase = termTokens.join(" ");
       found = joined.includes(phrase);
-      if (found && entry.irregular) {
-        // 全出現を確認
-        let hasNonCando = false;
-        let hasAnyCando = false;
+    }
+
+    if (!found) continue;
+
+    if (entry.irregular) {
+      let hasValidOccurrence = false;
+      if (termTokens.length === 1) {
+        for (let i = 0; i < textTokens.length; i++) {
+          if (textTokens[i] === term) {
+            const next = textTokens[i + 1];
+            if (!next || !CANDO.has(next)) { hasValidOccurrence = true; break; }
+          }
+        }
+      } else {
+        const joined = textTokens.join(" ");
+        const phrase = termTokens.join(" ");
         let searchFrom = 0;
         while (true) {
           const idx = joined.indexOf(phrase, searchFrom);
           if (idx === -1) break;
           const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
-          if (after && CANDO.has(after)) { hasAnyCando = true; }
-          else { hasNonCando = true; }
+          if (!after || !CANDO.has(after)) { hasValidOccurrence = true; break; }
           searchFrom = idx + 1;
         }
-        followedByCando = !hasNonCando && hasAnyCando;
       }
+      if (!hasValidOccurrence) continue;
     }
 
-    if (!found) continue;
-
-    // $irregular$: カンマが直前にあるかチェック
-    let precededByComma = false;
     if (entry.commaRequired) {
       const rawText = text.toLowerCase();
-      const commaPattern = new RegExp(",\s*" + term.replace(/[-']/g, "\$&"));
-      precededByComma = commaPattern.test(rawText);
+      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const commaPattern = new RegExp(",\\s*" + escapedTerm);
+      if (!commaPattern.test(rawText)) continue;
     }
 
-    if (entry.irregular && followedByCando) {
-      // cando後→スキップ
-    } else if (entry.commaRequired && !precededByComma) {
-      // カンマなし→スキップ
-    } else {
-      bumpouMatched.push(term);
-    }
+    bumpouMatched.push(term);
   }
 
-  // wordsカウント
   const wordsMatched = [];
-  for (const raw of filteredWords) {
+  for (const raw of wordsList) {
     const term = String(raw).trim().toLowerCase();
     if (!term) continue;
     const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
     let found = false;
-    if (termTokens.length === 1) {
-      found = tokenSet.has(term);
-    } else {
-      found = textTokens.join(" ").includes(termTokens.join(" "));
-    }
+    if (termTokens.length === 1) found = tokenSet.has(term);
+    else found = textTokens.join(" ").includes(termTokens.join(" "));
     if (found) wordsMatched.push(term);
   }
 
-  // 結果表示
   const resultDiv = document.getElementById("checkResult");
   resultDiv.style.display = "flex";
   resultDiv.style.flexDirection = "column";
 
   const bumpouCount = bumpouMatched.length;
   const wordsCount  = wordsMatched.length;
-
-  // ページ範囲の表示ラベル
-  let rangeLabel = "";
-  if (entryFilter) {
-    const haniList2 = await getList("hani");
-    const fromVal2 = document.getElementById("pageFrom").value.trim();
-    const toVal2   = document.getElementById("pageTo").value.trim();
-    const indivVal2 = document.getElementById("pageIndiv").value.trim();
-    if (fromVal2 || toVal2) rangeLabel = `範囲: hani ${fromVal2||"1"} 〜 ${toVal2||haniList2.length} （エントリ ${Math.min(...entryFilter)}〜${Math.max(...entryFilter)}）`;
-    else if (indivVal2) rangeLabel = `個別: hani ${indivVal2} （エントリ ${[...entryFilter].sort((a,b)=>a-b).join(", ")}）`;
-  } else {
-    rangeLabel = "全エントリ対象";
-  }
-
   const totalPoints = bumpouCount + wordsCount * 2;
   const wordCount = textTokens.length;
 
+  let rangeLabel = entryFilter ? "フィルタ適用済み" : "全エントリ対象";
+  
   let html = `<div style="font-size:0.75rem;color:#9ca3af;margin-bottom:10px;">${escHtml(rangeLabel)}</div>
   <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">
     <div class="result-card">
@@ -1201,45 +1127,26 @@ async function loadWordList() {
   const haniRaw = await getRawList("hani");
   const haniNums = haniRaw.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
 
-  // bwitemsを1-basedインデックスでセクション分け
-  // haniNums[i] = セクションiの最後のbwitemsインデックス(1-based)
-  // セクション分けしてテーブル生成
   let rows = '<div class="wl-wrap"><table class="wl-table"><thead><tr><th>語</th><th>意味</th></tr></thead><tbody>';
-
-  let sectionIdx = 0; // 現在のhaniセクション
+  let sectionIdx = 0;
   let nextBoundary = haniNums.length > 0 ? haniNums[0] : Infinity;
 
   bwRaw.forEach((v, i) => {
     const oneBasedIdx = i + 1;
+    const isFirstInSection = (sectionIdx === 0 && oneBasedIdx === 1) || (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1);
+    if (isFirstInSection) rows += `<tr class="wl-section-row"><td colspan="2">${sectionIdx + 1}ページ目</td></tr>`;
 
-    // セクションヘッダーを挿入するか判定
-    // セクション0の開始 = index 1, セクション1の開始 = haniNums[0]+1 ...
-    const isFirstInSection =
-      (sectionIdx === 0 && oneBasedIdx === 1) ||
-      (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1);
-
-    if (isFirstInSection) {
-      rows += `<tr class="wl-section-row"><td colspan="2">${sectionIdx + 1}ページ目</td></tr>`;
-    }
-
-    // 語を取得
     const s = String(v);
     let term = null;
+    // 表示時に記号を削除
     if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     else if (s.startsWith("words:")) term = s.slice(6).trim();
-    if (!term) {
-      // セクション境界の更新
-      if (oneBasedIdx >= nextBoundary) {
-        sectionIdx++;
-        nextBoundary = haniNums[sectionIdx] ?? Infinity;
-      }
-      return;
+    
+    if (term) {
+      const imi = imiRaw[i] ? String(imiRaw[i]).trim() : "";
+      rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imi)}</td></tr>`;
     }
 
-    const imi = imiRaw[i] ? String(imiRaw[i]).trim() : "";
-    rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imi)}</td></tr>`;
-
-    // セクション境界の更新
     if (oneBasedIdx >= nextBoundary) {
       sectionIdx++;
       nextBoundary = haniNums[sectionIdx] ?? Infinity;
@@ -1256,23 +1163,21 @@ async function doLookup() {
   const resultDiv = document.getElementById("lookupResult");
   if (!query) return;
 
-  // bwitemsから全件取得
   const bwRaw = await getRawList("bwitems");
   const imiRaw = await getRawList("imi");
   const reibunRaw = await getRawList("reibun");
 
-  // 入力語にマッチするbwitemsのインデックスを全て探す
   const matches = [];
   bwRaw.forEach((v, i) => {
     const s = String(v);
     let kind = null, term = null;
+    // 検索・マッチング時に記号を考慮
     if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
     else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).trim().toLowerCase(); }
     if (term === query) matches.push({ kind, term: s.startsWith("bumpou:") ? s.slice(7) : s.slice(6), idx: i });
   });
 
   resultDiv.style.display = "flex";
-
   if (!matches.length) {
     resultDiv.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" はリストに見つかりませんでした。</div>`;
     return;
@@ -1282,6 +1187,7 @@ async function doLookup() {
     const imi    = imiRaw[m.idx]    ? String(imiRaw[m.idx]).trim()    : "";
     const reibun = reibunRaw[m.idx] ? String(reibunRaw[m.idx]).trim() : "";
     const kindLabel = m.kind === "bumpou" ? "文法" : "単語";
+    // 表示時に記号を削除
     const termDisplay = m.term.replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "");
     return `
       ${mi > 0 ? '<hr class="lookup-divider">' : ""}
@@ -1296,7 +1202,6 @@ async function doLookup() {
       </div>
     `;
   }).join("");
-
   resultDiv.innerHTML = html;
 }
 
