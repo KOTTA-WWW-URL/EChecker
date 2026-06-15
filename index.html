@@ -458,7 +458,7 @@
 <body>
 
 <header>
-  <div class="logo">EChecker</div>
+  <div class="logo">English Checker</div>
 </header>
 
 <main>
@@ -694,19 +694,9 @@ async function handleCmd(raw) {
     if (!name || !LISTS.includes(name)) { print(`エラー: show &lt;${LISTS.join("|")}&gt;`, "cmd-err"); return; }
     const arr = await getList(name);
     if (!arr.length) { print(`[${name}] は空です`, "cmd-info"); return; }
-    if (MERGED.includes(name)) {
-      const prefix = name + ":";
-      const filtered = arr.filter(v => String(v).startsWith(prefix));
-      if (!filtered.length) { print(`[${name}] は空です`, "cmd-info"); return; }
-      filtered.forEach((v, i) => {
-        const display = String(v).slice(prefix.length);
-        print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(display)}</span>`);
-      });
-    } else {
-      arr.forEach((v, i) => {
-        print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(v)}</span>`);
-      });
-    }
+    arr.forEach((v, i) => {
+      print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(v)}</span>`);
+    });
     return;
   }
 
