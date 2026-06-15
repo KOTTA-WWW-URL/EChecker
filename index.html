@@ -953,6 +953,31 @@ function getConjugations(base, doubleConsonant) {
   return forms;
 }
 
+// ---- Term Parser ----
+function parseTerm(raw) {
+  let term = String(raw).trim().toLowerCase();
+  let irregular = false;
+  let commaRequired = false;
+  let conjugate = false;
+  let doubleConsonant = false;
+
+  if (term.endsWith("!irregular!")) {
+    term = term.replace(/!irregular!$/, "").trim();
+    irregular = true;
+  } else if (term.endsWith("$irregular$")) {
+    term = term.replace(/\$irregular\$$/, "").trim();
+    commaRequired = true;
+  } else if (term.endsWith("%dd%")) {
+    term = term.replace(/%dd%$/, "").trim();
+    conjugate = true;
+    doubleConsonant = true;
+  } else if (term.endsWith("%d%")) {
+    term = term.replace(/%d%$/, "").trim();
+    conjugate = true;
+  }
+  return { term, irregular, commaRequired, conjugate, doubleConsonant };
+}
+
 // ---- Check function ----
 document.getElementById("checkBtn").addEventListener("click", async () => {
   const text = document.getElementById("mainText").value;
@@ -965,107 +990,72 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     : bwRaw;
 
   const bumpouRaw = filterBW(filteredBW, "bumpou");
-  const wordsList  = filterBW(filteredBW, "words");
+  const wordsRaw  = filterBW(filteredBW, "words");
 
-  // トークン化: 記号を保持しつつ分割
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const tokenSet = new Set(textTokens);
 
-  const bumpouEntries = bumpouRaw.map(raw => {
-    const s = String(raw);
-    let term = s.trim().toLowerCase();
-    let irregular = false;
-    let commaRequired = false;
-    let conjugate = false;
-    let doubleConsonant = false;
+  // 共通のチェックロジック
+  function performCheck(rawList) {
+    const matched = [];
+    const entries = rawList.map(parseTerm).filter(e => e.term);
 
-    if (term.endsWith("!irregular!")) {
-      term = term.replace(/!irregular!$/, "").trim();
-      irregular = true;
-    } else if (term.endsWith("$irregular$")) {
-      term = term.replace(/\$irregular\$$/, "").trim();
-      commaRequired = true;
-    } else if (term.endsWith("%dd%")) {
-      term = term.replace(/%dd%$/, "").trim();
-      conjugate = true;
-      doubleConsonant = true;
-    } else if (term.endsWith("%d%")) {
-      term = term.replace(/%d%$/, "").trim();
-      conjugate = true;
-    }
-    return { term, irregular, commaRequired, conjugate, doubleConsonant };
-  }).filter(e => e.term);
+    for (const entry of entries) {
+      const term = entry.term;
+      const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
+      let found = false;
 
-  const bumpouMatched = [];
-  for (const entry of bumpouEntries) {
-    const term = entry.term;
-    const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
-    let found = false;
-    let matchedForm = term;
-
-    if (entry.conjugate) {
-      const forms = getConjugations(term, entry.doubleConsonant);
-      for (const f of forms) { 
-        if (tokenSet.has(f)) { 
-          found = true; 
-          matchedForm = f;
-          break; 
-        } 
-      }
-    } else if (termTokens.length === 1) {
-      found = tokenSet.has(term);
-    } else {
-      const joined = textTokens.join(" ");
-      const phrase = termTokens.join(" ");
-      found = joined.includes(phrase);
-    }
-
-    if (!found) continue;
-
-    if (entry.irregular) {
-      let hasValidOccurrence = false;
-      if (termTokens.length === 1) {
-        for (let i = 0; i < textTokens.length; i++) {
-          if (textTokens[i] === term) {
-            const next = textTokens[i + 1];
-            if (!next || !CANDO.has(next)) { hasValidOccurrence = true; break; }
-          }
-        }
+      if (entry.conjugate) {
+        const forms = getConjugations(term, entry.doubleConsonant);
+        for (const f of forms) { if (tokenSet.has(f)) { found = true; break; } }
+      } else if (termTokens.length === 1) {
+        found = tokenSet.has(term);
       } else {
         const joined = textTokens.join(" ");
         const phrase = termTokens.join(" ");
-        let searchFrom = 0;
-        while (true) {
-          const idx = joined.indexOf(phrase, searchFrom);
-          if (idx === -1) break;
-          const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
-          if (!after || !CANDO.has(after)) { hasValidOccurrence = true; break; }
-          searchFrom = idx + 1;
-        }
+        found = joined.includes(phrase);
       }
-      if (!hasValidOccurrence) continue;
-    }
 
-    if (entry.commaRequired) {
-      const rawText = text.toLowerCase();
-      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const commaPattern = new RegExp(",\\s*" + escapedTerm);
-      if (!commaPattern.test(rawText)) continue;
-    }
+      if (!found) continue;
 
-    bumpouMatched.push(term);
+      if (entry.irregular) {
+        let hasValidOccurrence = false;
+        if (termTokens.length === 1) {
+          for (let i = 0; i < textTokens.length; i++) {
+            if (textTokens[i] === term) {
+              const next = textTokens[i + 1];
+              if (!next || !CANDO.has(next)) { hasValidOccurrence = true; break; }
+            }
+          }
+        } else {
+          const joined = textTokens.join(" ");
+          const phrase = termTokens.join(" ");
+          let searchFrom = 0;
+          while (true) {
+            const idx = joined.indexOf(phrase, searchFrom);
+            if (idx === -1) break;
+            const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
+            if (!after || !CANDO.has(after)) { hasValidOccurrence = true; break; }
+            searchFrom = idx + 1;
+          }
+        }
+        if (!hasValidOccurrence) continue;
+      }
+
+      if (entry.commaRequired) {
+        const rawText = text.toLowerCase();
+        const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const commaPattern = new RegExp(",\\s*" + escapedTerm);
+        if (!commaPattern.test(rawText)) continue;
+      }
+
+      matched.push(term);
+    }
+    return matched;
   }
 
-  const wordsMatched = [];
-  for (const raw of wordsList) {
-    const term = String(raw).trim().toLowerCase();
-    if (!term) continue;
-    const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
-    let found = false;
-    if (termTokens.length === 1) found = tokenSet.has(term);
-    else found = textTokens.join(" ").includes(termTokens.join(" "));
-    if (found) wordsMatched.push(term);
-  }
+  const bumpouMatched = performCheck(bumpouRaw);
+  const wordsMatched  = performCheck(wordsRaw);
 
   const resultDiv = document.getElementById("checkResult");
   resultDiv.style.display = "flex";
@@ -1162,7 +1152,7 @@ async function loadWordList() {
     const s = String(v);
     let term = null;
     if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
-    else if (s.startsWith("words:")) term = s.slice(6).trim();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     
     if (term) {
       const imi = imiRaw[i] ? String(imiRaw[i]).trim() : "";
@@ -1194,7 +1184,7 @@ async function doLookup() {
     const s = String(v);
     let kind = null, term = null;
     if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
-    else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).trim().toLowerCase(); }
+    else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
     if (term === query) matches.push({ kind, term: s.startsWith("bumpou:") ? s.slice(7) : s.slice(6), idx: i });
   });
 
