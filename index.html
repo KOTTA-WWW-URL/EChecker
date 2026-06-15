@@ -340,22 +340,27 @@
 
   /* ページ指定 */
   .page-section { margin-bottom: 0; }
-  .page-controls {
+  .range-container {
     display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 10px;
     background: #f9fafb;
     border: 1.5px solid #e5e7eb;
     border-radius: 10px;
-    padding: 12px 16px;
+    padding: 16px;
   }
-  .page-group { display: flex; flex-direction: column; gap: 5px; }
-  .page-sub-label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; }
-  .page-range-row { display: flex; align-items: center; gap: 6px; }
-  .page-dash { color: #9ca3af; font-size: 0.9rem; }
-  .page-controls input[type=number],
-  .page-controls input[type=text] {
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .range-select-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .range-select {
     border: 1.5px solid #e5e7eb;
     border-radius: 7px;
     padding: 6px 10px;
@@ -363,12 +368,36 @@
     outline: none;
     background: #fff;
     color: #111;
-    transition: border-color 0.2s;
+    min-width: 140px;
   }
-  .page-controls input[type=number] { width: 72px; }
-  .page-controls input[type=text] { width: 160px; }
-  .page-controls input:focus { border-color: #6366f1; }
-  .page-divider { width: 1px; height: 40px; background: #e5e7eb; }
+  .range-select:focus { border-color: #6366f1; }
+  .range-dash { color: #9ca3af; font-size: 0.9rem; }
+  .btn-add-range {
+    background: #f3f4f6;
+    border: 1.5px dashed #d1d5db;
+    color: #6b7280;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    align-self: flex-start;
+  }
+  .btn-add-range:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+    color: #111;
+  }
+  .btn-remove-range {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .btn-remove-range:hover { color: #ef4444; }
 
   /* Checkボタン・結果 */
   .check-row { margin-top: 12px; display: flex; justify-content: flex-end; }
@@ -445,12 +474,6 @@
     background: #dcfce7;
     color: #166534;
   }
-  .matched-tag.skip-tag {
-    background: #fee2e2;
-    color: #991b1b;
-    text-decoration: line-through;
-    opacity: 0.7;
-  }
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-thumb { background: #2e3150; border-radius: 2px; }
 </style>
@@ -473,22 +496,11 @@
   <div id="panelChecker">
   <!-- ページ指定 -->
   <div class="page-section">
-    <div class="label">ページ指定</div>
-    <div class="page-controls">
-      <div class="page-group">
-        <span class="page-sub-label">範囲指定</span>
-        <div class="page-range-row">
-          <input type="number" id="pageFrom" placeholder="開始" min="1" />
-          <span class="page-dash">–</span>
-          <input type="number" id="pageTo" placeholder="終了" min="1" />
-        </div>
-      </div>
-      <div class="page-divider"></div>
-      <div class="page-group">
-        <span class="page-sub-label">個別指定</span>
-        <input type="text" id="pageIndiv" placeholder="例: 1,3,7" />
-      </div>
+    <div class="label">範囲指定</div>
+    <div class="range-container" id="rangeContainer">
+      <!-- 範囲行がここに追加される -->
     </div>
+    <button class="btn-add-range" id="addRangeBtn" style="margin-top:10px;">+ 範囲を追加</button>
   </div>
 
   <!-- テキスト入力 -->
@@ -569,9 +581,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const LISTS = ["bumpou", "hani", "words", "imi", "reibun"];
-const HARDCODED_PASS = "パスワード"; 
+const LISTS = ["bumpou", "hani", "words", "imi", "reibun", "haniname"];
 let isAdmin = false;
+let globalHaniNames = [];
 
 // ---- Helpers ----
 function escHtml(s) {
@@ -605,25 +617,20 @@ async function saveRawList(name, arr) {
 }
 
 async function getList(name) {
-  if (MERGED.includes(name)) {
-    return getRawList("bwitems");
-  }
+  if (MERGED.includes(name)) return getRawList("bwitems");
   return getRawList(name);
 }
 
 async function saveList(name, arr) {
-  if (MERGED.includes(name)) {
-    return saveRawList("bwitems", arr);
-  }
+  if (MERGED.includes(name)) return saveRawList("bwitems", arr);
   return saveRawList(name, arr);
 }
 
 async function addToBW(pos, kind, val) {
   const entry = kind + ":" + val;
   const arr = await getRawList("bwitems");
-  if (pos === "f") {
-    arr.push(entry);
-  } else {
+  if (pos === "f") arr.push(entry);
+  else {
     const i = parseInt(pos);
     arr.splice(isNaN(i) || i < 0 ? arr.length : i, 0, entry);
   }
@@ -633,9 +640,7 @@ async function addToBW(pos, kind, val) {
 
 function filterBW(arr, kind) {
   const prefix = kind + ":";
-  return arr
-    .filter(v => String(v).startsWith(prefix))
-    .map(v => String(v).slice(prefix.length));
+  return arr.filter(v => String(v).startsWith(prefix)).map(v => String(v).slice(prefix.length));
 }
 
 // ---- CMD ----
@@ -654,18 +659,14 @@ function print(html, cls = "cmd-info") {
 function initCmdMessages() {
   cmdOutput.innerHTML = "";
   print("Firebase 接続済み ✓", "cmd-ok");
-  print("add f bumpou though  /  add f allb though 譲歩  /  remove f hani  /  replace f words 新語  /  show bumpou", "cmd-info");
+  print("add f haniname 'Lesson 1'  /  show haniname", "cmd-info");
 }
 
 async function addTo(pos, name, val) {
-  if (MERGED.includes(name)) {
-    await addToBW(pos, name, val);
-    return;
-  }
+  if (MERGED.includes(name)) { await addToBW(pos, name, val); return; }
   const arr = await getRawList(name);
-  if (pos === "f") {
-    arr.push(val);
-  } else {
+  if (pos === "f") arr.push(val);
+  else {
     const i = parseInt(pos);
     arr.splice(isNaN(i) || i < 0 ? arr.length : i, 0, val);
   }
@@ -686,112 +687,66 @@ async function handleCmd(raw) {
     if (!name || !LISTS.includes(name)) { print(`エラー: show &lt;${LISTS.join("|")}&gt;`, "cmd-err"); return; }
     const arr = await getList(name);
     if (!arr.length) { print(`[${name}] は空です`, "cmd-info"); return; }
-    arr.forEach((v, i) => {
-      print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(v)}</span>`);
-    });
+    arr.forEach((v, i) => { print(`<span class="show-idx">${String(i).padStart(3)}. </span><span class="show-val">${escHtml(v)}</span>`); });
     return;
   }
 
   if (cmd === "add") {
     const pos = tokens[1], listArg = tokens[2], rest = tokens.slice(3).join(" ");
     if (!pos || !listArg) { print("エラー: add &lt;f|番号&gt; &lt;リスト|allb|allw&gt; [値]", "cmd-err"); return; }
-
-    const isAllb = listArg.toLowerCase() === "allb";
-    const isAllw = listArg.toLowerCase() === "allw";
-
-    if (isAllb || isAllw) {
-      const mainVal   = tokens[3] || "";
-      const imiVal    = tokens[4] || "";
-      const reibunVal = tokens[5] || "";
-      const mainList = isAllb ? "bumpou" : "words";
-      await addTo(pos, mainList, mainVal);
-      await addTo(pos, "imi", imiVal);
-      await addTo(pos, "reibun", reibunVal);
+    if (listArg.toLowerCase() === "allb" || listArg.toLowerCase() === "allw") {
+      const mainVal = tokens[3] || "", imiVal = tokens[4] || "", reibunVal = tokens[5] || "";
+      const mainList = listArg.toLowerCase() === "allb" ? "bumpou" : "words";
+      await addTo(pos, mainList, mainVal); await addTo(pos, "imi", imiVal); await addTo(pos, "reibun", reibunVal);
       print(`追加: [${mainList}] "${escHtml(mainVal)}" / [imi] "${escHtml(imiVal)}" / [reibun] "${escHtml(reibunVal)}"`, "cmd-ok");
       return;
     }
-
     if (!LISTS.includes(listArg)) { print(`エラー: 不明なリスト "${escHtml(listArg)}"`, "cmd-err"); return; }
     await addTo(pos, listArg, rest);
     print(`追加: [${listArg}] "${escHtml(rest)}"`, "cmd-ok");
+    if (listArg === "haniname") await initHaniUI();
     return;
   }
 
   if (cmd === "remove") {
     const posRm = tokens[1], name = tokens[2];
     if (!posRm || !name) { print("エラー: remove &lt;f|番号&gt; &lt;リスト|allb|allw&gt;", "cmd-err"); return; }
-    const isAllb = name.toLowerCase() === "allb";
-    const isAllw = name.toLowerCase() === "allw";
-    if (isAllb || isAllw) {
-      const bwArr  = await getRawList("bwitems");
-      const imiArr = await getRawList("imi");
-      const rbArr  = await getRawList("reibun");
+    if (name.toLowerCase() === "allb" || name.toLowerCase() === "allw") {
+      const bwArr = await getRawList("bwitems"), imiArr = await getRawList("imi"), rbArr = await getRawList("reibun");
       const idx = posRm === "f" ? bwArr.length - 1 : parseInt(posRm);
-      if (isNaN(idx) || idx < 0 || idx >= bwArr.length) { print(`エラー: 範囲外 (0–${bwArr.length - 1})`, "cmd-err"); return; }
-      const removedBW  = bwArr.splice(idx, 1)[0];
-      const removedImi = imiArr.splice(idx, 1)[0];
-      const removedRb  = rbArr.splice(idx, 1)[0];
-      await saveRawList("bwitems", bwArr);
-      await saveRawList("imi", imiArr);
-      await saveRawList("reibun", rbArr);
-      print(`削除: #${idx} [bwitems] "${escHtml(removedBW)}" / [imi] "${escHtml(removedImi)}" / [reibun] "${escHtml(removedRb)}"`, "cmd-ok");
-      return;
+      if (isNaN(idx) || idx < 0 || idx >= bwArr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
+      bwArr.splice(idx, 1); imiArr.splice(idx, 1); rbArr.splice(idx, 1);
+      await saveRawList("bwitems", bwArr); await saveRawList("imi", imiArr); await saveRawList("reibun", rbArr);
+      print(`削除完了`, "cmd-ok"); return;
     }
-    if (!LISTS.includes(name)) { print(`エラー: 不明なリスト "${escHtml(name)}"`, "cmd-err"); return; }
     const arr = await getList(name);
     const idx = posRm === "f" ? arr.length - 1 : parseInt(posRm);
-    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外 (0–${arr.length - 1})`, "cmd-err"); return; }
-    const removed = arr.splice(idx, 1)[0];
-    await saveList(name, arr);
-    print(`削除: [${name}] #${idx} "${escHtml(removed)}"`, "cmd-ok");
+    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
+    arr.splice(idx, 1); await saveList(name, arr);
+    print(`削除完了`, "cmd-ok");
+    if (name === "haniname") await initHaniUI();
     return;
   }
 
   if (cmd === "replace") {
     const posR = tokens[1], name = tokens[2];
-    if (!posR || !name) { print("エラー: replace &lt;f|番号&gt; &lt;リスト|allb|allw&gt; &lt;新しい値&gt;", "cmd-err"); return; }
-    const isAllb = name.toLowerCase() === "allb";
-    const isAllw = name.toLowerCase() === "allw";
-    if (isAllb || isAllw) {
-      const mainVal   = tokens[3] || "";
-      const imiVal    = tokens[4] || "";
-      const reibunVal = tokens[5] || "";
-      const mainList  = isAllb ? "bumpou" : "words";
-      const bwArr  = await getRawList("bwitems");
-      const imiArr = await getRawList("imi");
-      const rbArr  = await getRawList("reibun");
-      const idx = posR === "f" ? bwArr.length - 1 : parseInt(posR);
-      if (isNaN(idx) || idx < 0 || idx >= bwArr.length) { print(`エラー: 範囲外 (0–${bwArr.length - 1})`, "cmd-err"); return; }
-      const oldBW = bwArr[idx];
-      bwArr[idx]  = mainList + ":" + mainVal;
-      imiArr[idx] = imiVal;
-      rbArr[idx]  = reibunVal;
-      await saveRawList("bwitems", bwArr);
-      await saveRawList("imi", imiArr);
-      await saveRawList("reibun", rbArr);
-      print(`置換: #${idx} [bwitems] "${escHtml(oldBW)}" → "${escHtml(mainList+":"+mainVal)}" / [imi] "${escHtml(imiVal)}" / [reibun] "${escHtml(reibunVal)}"`, "cmd-ok");
-      return;
-    }
-    const newVal = tokens.slice(3).join(" ");
-    if (!LISTS.includes(name)) { print(`エラー: 不明なリスト "${escHtml(name)}"`, "cmd-err"); return; }
+    if (!posR || !name) { print("エラー: replace &lt;f|番号&gt; &lt;リスト&gt; &lt;新しい値&gt;", "cmd-err"); return; }
     const arr = await getList(name);
     const idx = posR === "f" ? arr.length - 1 : parseInt(posR);
-    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外 (0–${arr.length - 1})`, "cmd-err"); return; }
-    const old = arr[idx];
-    arr[idx] = newVal;
+    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
+    arr[idx] = tokens.slice(3).join(" ");
     await saveList(name, arr);
-    print(`置換: [${name}] #${idx}: "${escHtml(old)}" → "${escHtml(newVal)}"`, "cmd-ok");
+    print(`置換完了`, "cmd-ok");
+    if (name === "haniname") await initHaniUI();
     return;
   }
-
   print(`不明なコマンド: "${escHtml(cmd)}"`, "cmd-err");
 }
 
 cmdInput.addEventListener("keydown", async e => {
   if (e.key === "Enter") {
     const v = cmdInput.value; cmdInput.value = "";
-    try { await handleCmd(v); }
-    catch(err) { print("Firebase エラー: " + escHtml(err.message), "cmd-err"); }
+    try { await handleCmd(v); } catch(err) { print("エラー: " + escHtml(err.message), "cmd-err"); }
   } else if (e.key === "ArrowUp") {
     histIdx = Math.min(histIdx + 1, history.length - 1);
     cmdInput.value = history[histIdx] || ""; e.preventDefault();
@@ -801,256 +756,143 @@ cmdInput.addEventListener("keydown", async e => {
   }
 });
 
-// ---- Modals ----
-const adminBtn    = document.getElementById("adminBtn");
-const passOverlay = document.getElementById("passOverlay");
-const passInput   = document.getElementById("passInput");
-const passCancel  = document.getElementById("passCancel");
-const passEnter   = document.getElementById("passEnter");
-const passErr     = document.getElementById("passErr");
-const cmdOverlay  = document.getElementById("cmdOverlay");
-const cmdClose    = document.getElementById("cmdClose");
-
-function openPass() {
-  passInput.value = "";
-  passErr.style.display = "none";
-  passOverlay.classList.add("open");
-  setTimeout(() => passInput.focus(), 60);
-}
-function closePass() { passOverlay.classList.remove("open"); }
-
-function openCmd() {
-  cmdOverlay.classList.add("open");
-  setTimeout(() => cmdInput.focus(), 60);
-}
-function closeCmd() { cmdOverlay.classList.remove("open"); }
-
-adminBtn.addEventListener("click", () => {
-  if (isAdmin) openCmd(); else openPass();
-});
-passCancel.addEventListener("click", closePass);
-passOverlay.addEventListener("click", e => { if (e.target === passOverlay) closePass(); });
-cmdClose.addEventListener("click", closeCmd);
-cmdOverlay.addEventListener("click", e => { if (e.target === cmdOverlay) closeCmd(); });
-
-async function tryLogin() {
-  passErr.style.display = "none";
-  passErr.textContent = "";
-  const entered = passInput.value.trim();
-
-  let storedPass = null;
-  try {
-    const snap = await get(ref(db, "pass"));
-    if (snap.exists()) {
-      storedPass = String(snap.val()).trim();
-    }
-  } catch(e) {
-    passErr.textContent = "Firebase読み取りエラー: " + e.message;
-    passErr.style.display = "block";
-    return;
-  }
-
-  if (storedPass === null) {
-    passErr.textContent = 'Firebaseに "pass" データが見つかりません。';
-    passErr.style.display = "block";
-    return;
-  }
-
-  if (entered === storedPass) {
-    isAdmin = true;
-    closePass();
-    adminBtn.textContent = "CMD";
-    initCmdMessages();
-    openCmd();
-  } else {
-    passErr.textContent = "パスワードが正しくありません。";
-    passErr.style.display = "block";
-    passInput.value = "";
-    passInput.focus();
-  }
+// ---- UI Logic: Hani Selection ----
+async function initHaniUI() {
+  globalHaniNames = await getRawList("haniname");
+  const container = document.getElementById("rangeContainer");
+  container.innerHTML = "";
+  addRangeRow(); // 最初の一行
 }
 
-// ---- CANDO list ----
+function addRangeRow() {
+  const container = document.getElementById("rangeContainer");
+  const row = document.createElement("div");
+  row.className = "range-row";
+  
+  let options = globalHaniNames.map((name, i) => `<option value="${i+1}">${escHtml(name)}</option>`).join("");
+  
+  row.innerHTML = `
+    <div class="range-select-group">
+      <select class="range-select start-hani">${options}</select>
+      <span class="range-dash">–</span>
+      <select class="range-select end-hani">${options}</select>
+    </div>
+    <button class="btn-remove-range">✕</button>
+  `;
+  
+  row.querySelector(".btn-remove-range").addEventListener("click", () => {
+    if (container.children.length > 1) row.remove();
+  });
+  
+  container.appendChild(row);
+}
+
+document.getElementById("addRangeBtn").addEventListener("click", addRangeRow);
+
+// ---- CANDO & Conjugation ----
 const CANDO = new Set(["can","will","may","must","should","might","could","would","are","is","do","did","does","was","were"]);
 
-// ---- hani helper ----
-async function resolveHaniRange() {
-  const fromVal  = document.getElementById("pageFrom").value.trim();
-  const toVal    = document.getElementById("pageTo").value.trim();
-  const indivVal = document.getElementById("pageIndiv").value.trim();
-
-  if (!fromVal && !toVal && !indivVal) return null;
-
-  const haniList = await getList("hani");
-  if (!haniList.length) return null;
-
-  const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
-  if (!haniNums.length) return null;
-
-  let haniIndices = new Set();
-
-  if (fromVal || toVal) {
-    const f = fromVal ? Math.max(1, parseInt(fromVal)) : 1;
-    const t = toVal   ? Math.min(haniNums.length, parseInt(toVal)) : haniNums.length;
-    for (let i = f; i <= t; i++) haniIndices.add(i - 1); 
-  }
-
-  if (indivVal) {
-    indivVal.split(",").forEach(s => {
-      const n = parseInt(s.trim());
-      if (!isNaN(n) && n >= 1 && n <= haniNums.length) haniIndices.add(n - 1);
-    });
-  }
-
-  if (!haniIndices.size) return null;
-
-  const entrySet = new Set();
-  const sortedIdx = [...haniIndices].sort((a,b) => a-b);
-  for (const idx of sortedIdx) {
-    const start = idx === 0 ? 1 : haniNums[idx - 1] + 1;
-    const end   = haniNums[idx];
-    for (let e = start; e <= end; e++) entrySet.add(e);
-  }
-  return entrySet; 
-}
-
-// ---- Conjugation Helper ----
 function getConjugations(base, doubleConsonant) {
   const forms = new Set([base]);
   const lastChar = base.slice(-1);
-  
-  // ing形
-  if (doubleConsonant) {
-    forms.add(base + lastChar + "ing");
-  } else if (/e$/.test(base)) {
-    forms.add(base.slice(0, -1) + "ing");
-  } else if (/[^aeiou]y$/.test(base)) {
-    forms.add(base.slice(0, -1) + "ing");
-  } else {
-    forms.add(base + "ing");
-  }
-
-  // 過去形・過去分詞
-  if (doubleConsonant) {
-    forms.add(base + lastChar + "ed");
-  } else if (/e$/.test(base)) {
-    forms.add(base + "d");
-  } else if (/[^aeiou]y$/.test(base)) {
-    forms.add(base.slice(0, -1) + "ied");
-  } else {
-    forms.add(base + "ed");
-  }
-
-  // 三単現
-  if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) {
-    forms.add(base + "es");
-  } else if (/[^aeiou]y$/.test(base)) {
-    forms.add(base.slice(0, -1) + "ies");
-  } else {
-    forms.add(base + "s");
-  }
-  
+  if (doubleConsonant) { forms.add(base + lastChar + "ing"); forms.add(base + lastChar + "ed"); }
+  else if (/e$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base + "d"); }
+  else if (/[^aeiou]y$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base.slice(0, -1) + "ied"); }
+  else { forms.add(base + "ing"); forms.add(base + "ed"); }
+  if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) forms.add(base + "es");
+  else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
+  else forms.add(base + "s");
   return forms;
 }
 
-// ---- Term Parser ----
 function parseTerm(raw) {
   let term = String(raw).trim().toLowerCase();
-  let irregular = false;
-  let commaRequired = false;
-  let conjugate = false;
-  let doubleConsonant = false;
-
-  if (term.endsWith("!irregular!")) {
-    term = term.replace(/!irregular!$/, "").trim();
-    irregular = true;
-  } else if (term.endsWith("$irregular$")) {
-    term = term.replace(/\$irregular\$$/, "").trim();
-    commaRequired = true;
-  } else if (term.endsWith("%dd%")) {
-    term = term.replace(/%dd%$/, "").trim();
-    conjugate = true;
-    doubleConsonant = true;
-  } else if (term.endsWith("%d%")) {
-    term = term.replace(/%d%$/, "").trim();
-    conjugate = true;
-  }
+  let irregular = false, commaRequired = false, conjugate = false, doubleConsonant = false;
+  if (term.endsWith("!irregular!")) { term = term.replace(/!irregular!$/, "").trim(); irregular = true; }
+  else if (term.endsWith("$irregular$")) { term = term.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
+  else if (term.endsWith("%dd%")) { term = term.replace(/%dd%$/, "").trim(); conjugate = true; doubleConsonant = true; }
+  else if (term.endsWith("%d%")) { term = term.replace(/%d%$/, "").trim(); conjugate = true; }
   return { term, irregular, commaRequired, conjugate, doubleConsonant };
 }
 
-// ---- Check function ----
+// ---- Check Logic ----
+async function resolveMultipleRanges() {
+  const container = document.getElementById("rangeContainer");
+  const rows = container.querySelectorAll(".range-row");
+  const haniList = await getList("hani");
+  if (!haniList.length) return null;
+  const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
+
+  let entrySet = new Set();
+  rows.forEach(row => {
+    const startIdx = parseInt(row.querySelector(".start-hani").value) - 1;
+    const endIdx   = parseInt(row.querySelector(".end-hani").value) - 1;
+    const s = Math.min(startIdx, endIdx);
+    const e = Math.max(startIdx, endIdx);
+    for (let i = s; i <= e; i++) {
+      const startEntry = i === 0 ? 1 : haniNums[i - 1] + 1;
+      const endEntry   = haniNums[i];
+      for (let j = startEntry; j <= endEntry; j++) entrySet.add(j);
+    }
+  });
+  return entrySet.size > 0 ? entrySet : null;
+}
+
 document.getElementById("checkBtn").addEventListener("click", async () => {
   const text = document.getElementById("mainText").value;
   if (!text.trim()) return;
 
   const bwRaw = await getRawList("bwitems");
-  const entryFilter = await resolveHaniRange();
-  const filteredBW = entryFilter
-    ? bwRaw.filter((_, i) => entryFilter.has(i + 1))
-    : bwRaw;
+  const entryFilter = await resolveMultipleRanges();
+  const filteredBW = entryFilter ? bwRaw.filter((_, i) => entryFilter.has(i + 1)) : bwRaw;
 
   const bumpouRaw = filterBW(filteredBW, "bumpou");
   const wordsRaw  = filterBW(filteredBW, "words");
-
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const tokenSet = new Set(textTokens);
 
-  // 共通のチェックロジック
   function performCheck(rawList) {
     const matched = [];
-    const entries = rawList.map(parseTerm).filter(e => e.term);
-
-    for (const entry of entries) {
+    rawList.map(parseTerm).filter(e => e.term).forEach(entry => {
       const term = entry.term;
       const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
       let found = false;
-
       if (entry.conjugate) {
         const forms = getConjugations(term, entry.doubleConsonant);
         for (const f of forms) { if (tokenSet.has(f)) { found = true; break; } }
-      } else if (termTokens.length === 1) {
-        found = tokenSet.has(term);
-      } else {
-        const joined = textTokens.join(" ");
-        const phrase = termTokens.join(" ");
-        found = joined.includes(phrase);
-      }
+      } else if (termTokens.length === 1) found = tokenSet.has(term);
+      else found = textTokens.join(" ").includes(termTokens.join(" "));
 
-      if (!found) continue;
-
-      if (entry.irregular) {
-        let hasValidOccurrence = false;
-        if (termTokens.length === 1) {
-          for (let i = 0; i < textTokens.length; i++) {
-            if (textTokens[i] === term) {
-              const next = textTokens[i + 1];
-              if (!next || !CANDO.has(next)) { hasValidOccurrence = true; break; }
+      if (found) {
+        if (entry.irregular) {
+          let valid = false;
+          if (termTokens.length === 1) {
+            for (let i = 0; i < textTokens.length; i++) {
+              if (textTokens[i] === term) {
+                const next = textTokens[i + 1];
+                if (!next || !CANDO.has(next)) { valid = true; break; }
+              }
+            }
+          } else {
+            const joined = textTokens.join(" "), phrase = termTokens.join(" ");
+            let pos = 0;
+            while (true) {
+              const idx = joined.indexOf(phrase, pos); if (idx === -1) break;
+              const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
+              if (!after || !CANDO.has(after)) { valid = true; break; }
+              pos = idx + 1;
             }
           }
-        } else {
-          const joined = textTokens.join(" ");
-          const phrase = termTokens.join(" ");
-          let searchFrom = 0;
-          while (true) {
-            const idx = joined.indexOf(phrase, searchFrom);
-            if (idx === -1) break;
-            const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
-            if (!after || !CANDO.has(after)) { hasValidOccurrence = true; break; }
-            searchFrom = idx + 1;
-          }
+          if (!valid) return;
         }
-        if (!hasValidOccurrence) continue;
+        if (entry.commaRequired) {
+          const rawLower = text.toLowerCase();
+          const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) return;
+        }
+        matched.push(term);
       }
-
-      if (entry.commaRequired) {
-        const rawText = text.toLowerCase();
-        const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const commaPattern = new RegExp(",\\s*" + escapedTerm);
-        if (!commaPattern.test(rawText)) continue;
-      }
-
-      matched.push(term);
-    }
+    });
     return matched;
   }
 
@@ -1060,163 +902,108 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const resultDiv = document.getElementById("checkResult");
   resultDiv.style.display = "flex";
   resultDiv.style.flexDirection = "column";
-
-  const bumpouCount = bumpouMatched.length;
-  const wordsCount  = wordsMatched.length;
-  const totalPoints = bumpouCount + wordsCount * 2;
-  const wordCount = textTokens.length;
-
-  let rangeLabel = entryFilter ? "フィルタ適用済み" : "全エントリ対象";
   
-  let html = `<div style="font-size:0.75rem;color:#9ca3af;margin-bottom:10px;">${escHtml(rangeLabel)}</div>
-  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">
-    <div class="result-card">
-      <div class="rc-label">Grammar</div>
-      <div class="rc-count">${bumpouCount}</div>
-      <div class="rc-sub">× 1pt = ${bumpouCount}pt</div>
-    </div>
-    <div class="result-card">
-      <div class="rc-label">Key Words</div>
-      <div class="rc-count">${wordsCount}</div>
-      <div class="rc-sub">× 2pt = ${wordsCount * 2}pt</div>
-    </div>
-    <div class="result-card">
-      <div class="rc-label">語数</div>
-      <div class="rc-count" style="font-size:1.4rem;">${wordCount}</div>
-      <div class="rc-sub">words</div>
-    </div>
-  </div>`;
+  const bumpouCount = bumpouMatched.length, wordsCount = wordsMatched.length;
+  const totalPoints = bumpouCount + wordsCount * 2, wordCount = textTokens.length;
 
-  if (bumpouMatched.length) {
-    html += `<div class="result-matched">
-      <div class="rm-title">Grammar</div>
-      <div class="matched-tags">
-        ${bumpouMatched.map(t => `<span class="matched-tag">${escHtml(t)}</span>`).join("")}
-      </div>
-    </div>`;
-  }
-  if (wordsMatched.length) {
-    html += `<div class="result-matched">
-      <div class="rm-title">Key Words</div>
-      <div class="matched-tags">
-        ${wordsMatched.map(t => `<span class="matched-tag words-tag">${escHtml(t)}</span>`).join("")}
-      </div>
-    </div>`;
-  }
-
-  html += `<div style="margin-top:18px;padding-top:16px;border-top:1.5px solid #e5e7eb;display:flex;align-items:baseline;gap:10px;">
-    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9ca3af;">Total Points</div>
-    <div style="font-size:3rem;font-weight:900;color:#6366f1;line-height:1;">${totalPoints}</div>
-    <div style="font-size:1rem;font-weight:600;color:#6366f1;">pt</div>
-  </div>`;
-
+  let html = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">
+      <div class="result-card"><div class="rc-label">Grammar</div><div class="rc-count">${bumpouCount}</div><div class="rc-sub">× 1pt = ${bumpouCount}pt</div></div>
+      <div class="result-card"><div class="rc-label">Key Words</div><div class="rc-count">${wordsCount}</div><div class="rc-sub">× 2pt = ${wordsCount * 2}pt</div></div>
+      <div class="result-card"><div class="rc-label">語数</div><div class="rc-count" style="font-size:1.4rem;">${wordCount}</div><div class="rc-sub">words</div></div>
+    </div>
+  `;
+  if (bumpouMatched.length) html += `<div class="result-matched"><div class="rm-title">Grammar</div><div class="matched-tags">${bumpouMatched.map(t => `<span class="matched-tag">${escHtml(t)}</span>`).join("")}</div></div>`;
+  if (wordsMatched.length) html += `<div class="result-matched"><div class="rm-title">Key Words</div><div class="matched-tags">${wordsMatched.map(t => `<span class="matched-tag words-tag">${escHtml(t)}</span>`).join("")}</div></div>`;
+  html += `<div style="margin-top:18px;padding-top:16px;border-top:1.5px solid #e5e7eb;display:flex;align-items:baseline;gap:10px;"><div style="font-size:0.72rem;font-weight:700;color:#9ca3af;">TOTAL POINTS</div><div style="font-size:3rem;font-weight:900;color:#6366f1;">${totalPoints}</div><div style="font-size:1rem;font-weight:600;color:#6366f1;">pt</div></div>`;
   resultDiv.innerHTML = html;
 });
 
-passEnter.addEventListener("click", tryLogin);
-passInput.addEventListener("keydown", e => { if (e.key === "Enter") tryLogin(); });
-
-// ---- Tab switching ----
-document.getElementById("tabChecker").addEventListener("click", () => switchTab("checker"));
-document.getElementById("tabLookup").addEventListener("click",  () => switchTab("lookup"));
-document.getElementById("tabWordlist").addEventListener("click", () => switchTab("wordlist"));
-
+// ---- Tabs & Wordlist ----
 function switchTab(tab) {
-  document.getElementById("panelChecker").style.display  = tab === "checker"  ? "" : "none";
-  document.getElementById("panelLookup").style.display   = tab === "lookup"   ? "" : "none";
-  document.getElementById("panelWordlist").style.display = tab === "wordlist" ? "" : "none";
-  document.getElementById("tabChecker").classList.toggle("active",  tab === "checker");
-  document.getElementById("tabLookup").classList.toggle("active",   tab === "lookup");
-  document.getElementById("tabWordlist").classList.toggle("active", tab === "wordlist");
+  ["panelChecker", "panelLookup", "panelWordlist"].forEach(p => document.getElementById(p).style.display = "none");
+  ["tabChecker", "tabLookup", "tabWordlist"].forEach(t => document.getElementById(t).classList.remove("active"));
+  document.getElementById("panel" + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = "";
+  document.getElementById("tab" + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add("active");
   if (tab === "wordlist") loadWordList();
 }
+document.getElementById("tabChecker").addEventListener("click", () => switchTab("checker"));
+document.getElementById("tabLookup").addEventListener("click", () => switchTab("lookup"));
+document.getElementById("tabWordlist").addEventListener("click", () => switchTab("wordlist"));
 
 async function loadWordList() {
   const el = document.getElementById("wordlistContent");
   el.innerHTML = '<div class="wl-loading">読み込み中...</div>';
-
-  const bwRaw  = await getRawList("bwitems");
-  const imiRaw = await getRawList("imi");
-  const haniRaw = await getRawList("hani");
+  const bwRaw = await getRawList("bwitems"), imiRaw = await getRawList("imi"), haniRaw = await getRawList("hani");
   const haniNums = haniRaw.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
+  const haniNames = await getRawList("haniname");
 
   let rows = '<div class="wl-wrap"><table class="wl-table"><thead><tr><th>語</th><th>意味</th></tr></thead><tbody>';
-  let sectionIdx = 0;
-  let nextBoundary = haniNums.length > 0 ? haniNums[0] : Infinity;
+  let sectionIdx = 0, nextBoundary = haniNums.length > 0 ? haniNums[0] : Infinity;
 
   bwRaw.forEach((v, i) => {
     const oneBasedIdx = i + 1;
-    const isFirstInSection = (sectionIdx === 0 && oneBasedIdx === 1) || (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1);
-    if (isFirstInSection) rows += `<tr class="wl-section-row"><td colspan="2">${sectionIdx + 1}ページ目</td></tr>`;
-
+    if ((sectionIdx === 0 && oneBasedIdx === 1) || (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1)) {
+      rows += `<tr class="wl-section-row"><td colspan="2">${escHtml(haniNames[sectionIdx] || (sectionIdx + 1) + "ページ目")}</td></tr>`;
+    }
     const s = String(v);
     let term = null;
     if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
-    
-    if (term) {
-      const imi = imiRaw[i] ? String(imiRaw[i]).trim() : "";
-      rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imi)}</td></tr>`;
-    }
-
-    if (oneBasedIdx >= nextBoundary) {
-      sectionIdx++;
-      nextBoundary = haniNums[sectionIdx] ?? Infinity;
-    }
+    if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
+    if (oneBasedIdx >= nextBoundary) { sectionIdx++; nextBoundary = haniNums[sectionIdx] ?? Infinity; }
   });
-
-  rows += '</tbody></table></div>';
-  el.innerHTML = rows;
+  el.innerHTML = rows + '</tbody></table></div>';
 }
 
 // ---- Look up ----
 async function doLookup() {
   const query = document.getElementById("lookupInput").value.trim().toLowerCase();
-  const resultDiv = document.getElementById("lookupResult");
   if (!query) return;
-
-  const bwRaw = await getRawList("bwitems");
-  const imiRaw = await getRawList("imi");
-  const reibunRaw = await getRawList("reibun");
-
+  const bwRaw = await getRawList("bwitems"), imiRaw = await getRawList("imi"), reibunRaw = await getRawList("reibun");
   const matches = [];
   bwRaw.forEach((v, i) => {
-    const s = String(v);
-    let kind = null, term = null;
-    if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
-    else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
-    if (term === query) matches.push({ kind, term: s.startsWith("bumpou:") ? s.slice(7) : s.slice(6), idx: i });
+    const s = String(v); let term = "";
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase();
+    if (term === query) matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: s.split(":")[1].replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, ""), idx: i });
   });
-
-  resultDiv.style.display = "flex";
-  if (!matches.length) {
-    resultDiv.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" はリストに見つかりませんでした。</div>`;
-    return;
-  }
-
-  let html = matches.map((m, mi) => {
-    const imi    = imiRaw[m.idx]    ? String(imiRaw[m.idx]).trim()    : "";
-    const reibun = reibunRaw[m.idx] ? String(reibunRaw[m.idx]).trim() : "";
-    const kindLabel = m.kind === "bumpou" ? "文法" : "単語";
-    const termDisplay = m.term.replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "");
-    return `
-      ${mi > 0 ? '<hr class="lookup-divider">' : ""}
-      <div class="lookup-word">${escHtml(termDisplay)} <span style="font-size:0.7rem;font-weight:600;color:#9ca3af;letter-spacing:0.08em;">${kindLabel}</span></div>
-      <div>
-        <div class="lookup-kind">意味</div>
-        <div class="lookup-val">${imi ? escHtml(imi) : '<span class="dont-make">—</span>'}</div>
-      </div>
-      <div>
-        <div class="lookup-kind">例文</div>
-        <div class="lookup-val ${reibun ? "" : "dont-make"}">${reibun ? escHtml(reibun) : "Don't make"}</div>
-      </div>
-    `;
-  }).join("");
-  resultDiv.innerHTML = html;
+  const res = document.getElementById("lookupResult"); res.style.display = "flex";
+  if (!matches.length) { res.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" は見つかりませんでした。</div>`; return; }
+  res.innerHTML = matches.map((m, i) => `
+    ${i > 0 ? '<hr class="lookup-divider">' : ""}
+    <div class="lookup-word">${escHtml(m.term)} <span style="font-size:0.7rem;color:#9ca3af;">${m.kind}</span></div>
+    <div><div class="lookup-kind">意味</div><div class="lookup-val">${escHtml(imiRaw[m.idx] || "—")}</div></div>
+    <div><div class="lookup-kind">例文</div><div class="lookup-val">${escHtml(reibunRaw[m.idx] || "Don't make")}</div></div>
+  `).join("");
 }
-
 document.getElementById("lookupBtn").addEventListener("click", doLookup);
 document.getElementById("lookupInput").addEventListener("keydown", e => { if (e.key === "Enter") doLookup(); });
+
+// ---- Admin Login ----
+const adminBtn = document.getElementById("adminBtn"), passOverlay = document.getElementById("passOverlay"), passInput = document.getElementById("passInput");
+adminBtn.addEventListener("click", () => { if (isAdmin) openCmd(); else openPass(); });
+document.getElementById("passCancel").addEventListener("click", closePass);
+document.getElementById("passEnter").addEventListener("click", tryLogin);
+document.getElementById("cmdClose").addEventListener("click", closeCmd);
+
+function openPass() { passInput.value = ""; document.getElementById("passErr").style.display = "none"; passOverlay.classList.add("open"); setTimeout(() => passInput.focus(), 60); }
+function closePass() { passOverlay.classList.remove("open"); }
+function openCmd() { document.getElementById("cmdOverlay").classList.add("open"); setTimeout(() => cmdInput.focus(), 60); }
+function closeCmd() { document.getElementById("cmdOverlay").classList.remove("open"); }
+
+async function tryLogin() {
+  const entered = passInput.value.trim();
+  const snap = await get(ref(db, "pass"));
+  if (snap.exists() && entered === String(snap.val()).trim()) {
+    isAdmin = true; closePass(); adminBtn.textContent = "CMD"; initCmdMessages(); openCmd();
+  } else {
+    document.getElementById("passErr").style.display = "block"; passInput.value = "";
+  }
+}
+
+// Initial Load
+initHaniUI();
 </script>
 </body>
 </html>
