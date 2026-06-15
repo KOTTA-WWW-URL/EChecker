@@ -812,7 +812,6 @@ function parseTerm(raw) {
   if (rawStr.endsWith("!irregular!")) { rawStr = rawStr.replace(/!irregular!$/, "").trim(); irregular = true; }
   if (rawStr.endsWith("$irregular$")) { rawStr = rawStr.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
   
-  // フレーズ全体を単語に分割し、タグが含まれている単語を特定
   const parts = rawStr.split(/\s+/);
   const parsedParts = parts.map(p => {
     let term = p, conjugate = false, doubleConsonant = false;
@@ -822,7 +821,7 @@ function parseTerm(raw) {
   });
 
   return { 
-    original: rawStr.replace(/(%d%|%dd%)/g, ""), // 表示用（タグなし）
+    original: rawStr.replace(/(%d%|%dd%)/g, ""),
     parts: parsedParts,
     irregular, 
     commaRequired 
@@ -844,6 +843,7 @@ async function resolveMultipleRanges() {
     for (let i = s; i <= e; i++) {
       const startEntry = i === 0 ? 1 : haniNums[i - 1] + 1;
       const endEntry   = haniNums[i];
+      // 指定した行番号（endEntry）まで確実に含める
       for (let j = startEntry; j <= endEntry; j++) entrySet.add(j);
     }
   });
@@ -863,7 +863,6 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   function performCheck(rawList, isWordsList) {
     const matched = [];
     rawList.map(parseTerm).forEach(entry => {
-      // 変化形フレーズの全パターンを生成
       let phrasePatterns = [[]];
       entry.parts.forEach(p => {
         let newPatterns = [];
