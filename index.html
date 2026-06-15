@@ -807,13 +807,26 @@ function getPlurals(base) {
 }
 
 function parseTerm(raw) {
-  let term = String(raw).trim().toLowerCase();
-  let irregular = false, commaRequired = false, conjugate = false, doubleConsonant = false;
-  if (term.endsWith("!irregular!")) { term = term.replace(/!irregular!$/, "").trim(); irregular = true; }
-  else if (term.endsWith("$irregular$")) { term = term.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
-  else if (term.endsWith("%dd%")) { term = term.replace(/%dd%$/, "").trim(); conjugate = true; doubleConsonant = true; }
-  else if (term.endsWith("%d%")) { term = term.replace(/%d%$/, "").trim(); conjugate = true; }
-  return { term, irregular, commaRequired, conjugate, doubleConsonant };
+  let rawStr = String(raw).trim().toLowerCase();
+  let irregular = false, commaRequired = false;
+  if (rawStr.endsWith("!irregular!")) { rawStr = rawStr.replace(/!irregular!$/, "").trim(); irregular = true; }
+  if (rawStr.endsWith("$irregular$")) { rawStr = rawStr.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
+  
+  // フレーズ全体を単語に分割し、タグが含まれている単語を特定
+  const parts = rawStr.split(/\s+/);
+  const parsedParts = parts.map(p => {
+    let term = p, conjugate = false, doubleConsonant = false;
+    if (term.endsWith("%dd%")) { term = term.replace(/%dd%$/, ""); conjugate = true; doubleConsonant = true; }
+    else if (term.endsWith("%d%")) { term = term.replace(/%d%$/, ""); conjugate = true; }
+    return { term, conjugate, doubleConsonant };
+  });
+
+  return { 
+    original: rawStr.replace(/(%d%|%dd%)/g, ""), // 表示用（タグなし）
+    parts: parsedParts,
+    irregular, 
+    commaRequired 
+  };
 }
 
 // ---- Check Logic ----
@@ -845,40 +858,54 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const bumpouRaw = filterBW(filteredBW, "bumpou"), wordsRaw = filterBW(filteredBW, "words");
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const tokenSet = new Set(textTokens);
+  const joinedText = textTokens.join(" ");
 
   function performCheck(rawList, isWordsList) {
     const matched = [];
-    rawList.map(parseTerm).filter(e => e.term).forEach(entry => {
-      const term = entry.term;
-      const termTokens = term.match(/[a-zA-Z'-]+/g) || [term];
+    rawList.map(parseTerm).forEach(entry => {
+      // 変化形フレーズの全パターンを生成
+      let phrasePatterns = [[]];
+      entry.parts.forEach(p => {
+        let newPatterns = [];
+        let forms = [p.term];
+        if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
+        else if (isWordsList && entry.parts.length === 1) forms = Array.from(getPlurals(p.term));
+        
+        forms.forEach(f => {
+          phrasePatterns.forEach(pat => {
+            newPatterns.push([...pat, f]);
+          });
+        });
+        phrasePatterns = newPatterns;
+      });
+
       let found = false;
-      if (entry.conjugate) {
-        const forms = getConjugations(term, entry.doubleConsonant);
-        for (const f of forms) { if (tokenSet.has(f)) { found = true; break; } }
-      } else if (termTokens.length === 1) {
-        found = tokenSet.has(term);
-        if (!found && isWordsList) {
-          const plurals = getPlurals(term);
-          for (const p of plurals) { if (tokenSet.has(p)) { found = true; break; } }
+      let matchedPhrase = "";
+      for (const pat of phrasePatterns) {
+        const phrase = pat.join(" ");
+        if (pat.length === 1) {
+          if (tokenSet.has(phrase)) { found = true; matchedPhrase = phrase; break; }
+        } else {
+          if (joinedText.includes(phrase)) { found = true; matchedPhrase = phrase; break; }
         }
-      } else found = textTokens.join(" ").includes(termTokens.join(" "));
+      }
 
       if (found) {
         if (entry.irregular) {
           let valid = false;
-          if (termTokens.length === 1) {
+          const phraseTokens = matchedPhrase.split(" ");
+          if (phraseTokens.length === 1) {
             for (let i = 0; i < textTokens.length; i++) {
-              if (textTokens[i] === term) {
+              if (textTokens[i] === matchedPhrase) {
                 const next = textTokens[i + 1];
                 if (!next || !CANDO.has(next)) { valid = true; break; }
               }
             }
           } else {
-            const joined = textTokens.join(" "), phrase = termTokens.join(" ");
             let pos = 0;
             while (true) {
-              const idx = joined.indexOf(phrase, pos); if (idx === -1) break;
-              const after = joined.slice(idx + phrase.length).trim().split(" ")[0];
+              const idx = joinedText.indexOf(matchedPhrase, pos); if (idx === -1) break;
+              const after = joinedText.slice(idx + matchedPhrase.length).trim().split(" ")[0];
               if (!after || !CANDO.has(after)) { valid = true; break; }
               pos = idx + 1;
             }
@@ -886,10 +913,10 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
           if (!valid) return;
         }
         if (entry.commaRequired) {
-          const rawLower = text.toLowerCase(), escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const rawLower = text.toLowerCase(), escaped = entry.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) return;
         }
-        matched.push(term);
+        matched.push(entry.original);
       }
     });
     return matched;
@@ -939,8 +966,8 @@ async function loadWordList() {
       rows += `<tr class="wl-section-row"><td colspan="2">${escHtml(haniNames[sectionIdx] || (sectionIdx + 1) + "ページ目")}</td></tr>`;
     }
     const s = String(v); let term = null;
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim();
     if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
     if (oneBasedIdx >= nextBoundary) { sectionIdx++; nextBoundary = haniNums[sectionIdx] ?? Infinity; }
   });
@@ -955,9 +982,9 @@ async function doLookup() {
   const matches = [];
   bwRaw.forEach((v, i) => {
     const s = String(v); let term = "";
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase();
-    if (term === query) matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: s.split(":")[1].replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, ""), idx: i });
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim().toLowerCase();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim().toLowerCase();
+    if (term === query) matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: s.split(":")[1].replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, ""), idx: i });
   });
   const res = document.getElementById("lookupResult"); res.style.display = "flex";
   if (!matches.length) { res.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" は見つかりませんでした。</div>`; return; }
@@ -989,8 +1016,6 @@ async function tryLogin() {
     document.getElementById("passErr").style.display = "block"; passInput.value = "";
   }
 }
-
-// Enterキーでのログインを有効化
 passInput.addEventListener("keydown", e => { if (e.key === "Enter") tryLogin(); });
 
 initHaniUI();
