@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EChecker</title>
+<title>単語・文法チェッカー</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -458,7 +458,7 @@
 <body>
 
 <header>
-  <div class="logo">English Checker</div>
+  <div class="logo">単語・文法チェッカー</div>
 </header>
 
 <main>
@@ -739,7 +739,25 @@ async function handleCmd(raw) {
 
   if (cmd === "remove") {
     const posRm = tokens[1], name = tokens[2];
-    if (!posRm || !name || !LISTS.includes(name)) { print("エラー: remove &lt;f|番号&gt; &lt;リスト&gt;", "cmd-err"); return; }
+    if (!posRm || !name) { print("エラー: remove &lt;f|番号&gt; &lt;リスト|allb|allw&gt;", "cmd-err"); return; }
+    const isAllb = name.toLowerCase() === "allb";
+    const isAllw = name.toLowerCase() === "allw";
+    if (isAllb || isAllw) {
+      const bwArr  = await getRawList("bwitems");
+      const imiArr = await getRawList("imi");
+      const rbArr  = await getRawList("reibun");
+      const idx = posRm === "f" ? bwArr.length : parseInt(posRm);
+      if (isNaN(idx) || idx < 1 || idx > bwArr.length) { print(`エラー: 範囲外 (1–${bwArr.length})`, "cmd-err"); return; }
+      const removedBW  = bwArr.splice(idx - 1, 1)[0];
+      const removedImi = imiArr.splice(idx - 1, 1)[0];
+      const removedRb  = rbArr.splice(idx - 1, 1)[0];
+      await saveRawList("bwitems", bwArr);
+      await saveRawList("imi", imiArr);
+      await saveRawList("reibun", rbArr);
+      print(`削除: #${idx} [bwitems] "${escHtml(removedBW)}" / [imi] "${escHtml(removedImi)}" / [reibun] "${escHtml(removedRb)}"`, "cmd-ok");
+      return;
+    }
+    if (!LISTS.includes(name)) { print(`エラー: 不明なリスト "${escHtml(name)}"`, "cmd-err"); return; }
     const arr = await getList(name);
     const idx = posRm === "f" ? arr.length : parseInt(posRm);
     if (isNaN(idx) || idx < 1 || idx > arr.length) { print(`エラー: 範囲外 (1–${arr.length})`, "cmd-err"); return; }
@@ -750,8 +768,32 @@ async function handleCmd(raw) {
   }
 
   if (cmd === "replace") {
-    const posR = tokens[1], name = tokens[2], newVal = tokens.slice(3).join(" ");
-    if (!posR || !name || !LISTS.includes(name)) { print("エラー: replace &lt;f|番号&gt; &lt;リスト&gt; &lt;新しい値&gt;", "cmd-err"); return; }
+    const posR = tokens[1], name = tokens[2];
+    if (!posR || !name) { print("エラー: replace &lt;f|番号&gt; &lt;リスト|allb|allw&gt; &lt;新しい値&gt;", "cmd-err"); return; }
+    const isAllb = name.toLowerCase() === "allb";
+    const isAllw = name.toLowerCase() === "allw";
+    if (isAllb || isAllw) {
+      const mainVal   = tokens[3] || "";
+      const imiVal    = tokens[4] || "";
+      const reibunVal = tokens[5] || "";
+      const mainList  = isAllb ? "bumpou" : "words";
+      const bwArr  = await getRawList("bwitems");
+      const imiArr = await getRawList("imi");
+      const rbArr  = await getRawList("reibun");
+      const idx = posR === "f" ? bwArr.length : parseInt(posR);
+      if (isNaN(idx) || idx < 1 || idx > bwArr.length) { print(`エラー: 範囲外 (1–${bwArr.length})`, "cmd-err"); return; }
+      const oldBW = bwArr[idx - 1];
+      bwArr[idx - 1]  = mainList + ":" + mainVal;
+      imiArr[idx - 1] = imiVal;
+      rbArr[idx - 1]  = reibunVal;
+      await saveRawList("bwitems", bwArr);
+      await saveRawList("imi", imiArr);
+      await saveRawList("reibun", rbArr);
+      print(`置換: #${idx} [bwitems] "${escHtml(oldBW)}" → "${escHtml(mainList+":"+mainVal)}" / [imi] "${escHtml(imiVal)}" / [reibun] "${escHtml(reibunVal)}"`, "cmd-ok");
+      return;
+    }
+    const newVal = tokens.slice(3).join(" ");
+    if (!LISTS.includes(name)) { print(`エラー: 不明なリスト "${escHtml(name)}"`, "cmd-err"); return; }
     const arr = await getList(name);
     const idx = posR === "f" ? arr.length : parseInt(posR);
     if (isNaN(idx) || idx < 1 || idx > arr.length) { print(`エラー: 範囲外 (1–${arr.length})`, "cmd-err"); return; }
