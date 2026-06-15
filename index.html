@@ -965,13 +965,52 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const bumpouEntries = filteredBumpou.map(raw => {
     const s = String(raw);
     if (s.endsWith("!irregular!")) {
-      return { term: s.replace(/!irregular!$/, "").trim().toLowerCase(), irregular: true, commaRequired: false };
+      return { term: s.replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(), irregular: true, commaRequired: false, conjugate: false };
     }
     if (s.endsWith("$irregular$")) {
-      return { term: s.replace(/\$irregular\$$/, "").trim().toLowerCase(), irregular: false, commaRequired: true };
+      return { term: s.replace(/\$irregular\$$/, "").trim().toLowerCase(), irregular: false, commaRequired: true, conjugate: false };
     }
-    return { term: s.trim().toLowerCase(), irregular: false, commaRequired: false };
+    if (s.endsWith("%dd%")) {
+      return { term: s.replace(/%dd%$/, "").trim().toLowerCase(), irregular: false, commaRequired: false, conjugate: true, doubleConsonant: true };
+    }
+    if (s.endsWith("%d%")) {
+      return { term: s.replace(/%d%$/, "").trim().toLowerCase(), irregular: false, commaRequired: false, conjugate: true, doubleConsonant: false };
+    }
+    return { term: s.trim().toLowerCase(), irregular: false, commaRequired: false, conjugate: false, doubleConsonant: false };
   }).filter(e => e.term);
+
+  // 規則動詞の変化形を生成
+  function getConjugations(base, doubleConsonant) {
+    const forms = new Set([base]);
+    const lastChar = base.slice(-1);
+    // ing形
+    if (doubleConsonant) {
+      forms.add(base + lastChar + "ing"); // run→running
+    } else if (/e$/.test(base)) {
+      forms.add(base.slice(0, -1) + "ing"); // love→loving
+    } else {
+      forms.add(base + "ing");
+    }
+    // 過去形・過去分詞
+    if (doubleConsonant) {
+      forms.add(base + "ed"); // run→runed
+    } else if (/e$/.test(base)) {
+      forms.add(base + "d"); // love→loved
+    } else if (/[^aeiou]y$/.test(base)) {
+      forms.add(base.slice(0, -1) + "ied"); // study→studied
+    } else {
+      forms.add(base + "ed");
+    }
+    // 三単現
+    if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) {
+      forms.add(base + "es"); // watch→watches
+    } else if (/[^aeiou]y$/.test(base)) {
+      forms.add(base.slice(0, -1) + "ies"); // study→studies
+    } else {
+      forms.add(base + "s");
+    }
+    return forms;
+  }
 
   // テキスト内のトークンセット
   const tokenSet = new Set(textTokens);
@@ -990,7 +1029,12 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     let found = false;
     let followedByCando = false;
 
-    if (termTokens.length === 1) {
+    if (entry.conjugate) {
+      const forms = getConjugations(term, entry.doubleConsonant);
+      for (const f of forms) {
+        if (tokenSet.has(f)) { found = true; break; }
+      }
+    } else if (termTokens.length === 1) {
       found = tokenSet.has(term);
       if (found && entry.irregular) {
         // 全出現を確認: 1つでもCANDO以外が直後にあればカウント
@@ -1181,7 +1225,7 @@ async function loadWordList() {
     // 語を取得
     const s = String(v);
     let term = null;
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/!irregular!$/, "").trim();
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim();
     else if (s.startsWith("words:")) term = s.slice(6).trim();
     if (!term) {
       // セクション境界の更新
@@ -1222,7 +1266,7 @@ async function doLookup() {
   bwRaw.forEach((v, i) => {
     const s = String(v);
     let kind = null, term = null;
-    if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/!irregular!$/, "").trim().toLowerCase(); }
+    if (s.startsWith("bumpou:")) { kind = "bumpou"; term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "").trim().toLowerCase(); }
     else if (s.startsWith("words:")) { kind = "words"; term = s.slice(6).trim().toLowerCase(); }
     if (term === query) matches.push({ kind, term: s.startsWith("bumpou:") ? s.slice(7) : s.slice(6), idx: i });
   });
@@ -1238,7 +1282,7 @@ async function doLookup() {
     const imi    = imiRaw[m.idx]    ? String(imiRaw[m.idx]).trim()    : "";
     const reibun = reibunRaw[m.idx] ? String(reibunRaw[m.idx]).trim() : "";
     const kindLabel = m.kind === "bumpou" ? "文法" : "単語";
-    const termDisplay = m.term.replace(/!irregular!$/, "");
+    const termDisplay = m.term.replace(/(!irregular!|\$irregular\$|%dd%|%d%)$/, "");
     return `
       ${mi > 0 ? '<hr class="lookup-divider">' : ""}
       <div class="lookup-word">${escHtml(termDisplay)} <span style="font-size:0.7rem;font-weight:600;color:#9ca3af;letter-spacing:0.08em;">${kindLabel}</span></div>
