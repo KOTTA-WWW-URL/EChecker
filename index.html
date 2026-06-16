@@ -1013,7 +1013,7 @@ async function doLookup() {
     ${i > 0 ? '<hr class="lookup-divider">' : ""}
     <div class="lookup-word">${escHtml(m.term)} <span style="font-size:0.7rem;color:#9ca3af;">${m.kind}</span></div>
     <div><div class="lookup-kind">意味</div><div class="lookup-val">${escHtml(imiRaw[m.idx] || "—")}</div></div>
-    <div><div class="lookup-kind">例文</div><div class="lookup-val">${escHtml(reibunRaw[m.idx] || "Don't make")}</div></div>
+    <div><div class="lookup-kind">例文</div><div class="lookup-val">${escHtml(reibunRaw[m.idx] || "未制作")}</div></div>
   `).join("");
 }
 document.getElementById("lookupBtn").addEventListener("click", doLookup);
