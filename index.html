@@ -795,6 +795,14 @@ function getConjugations(base, doubleConsonant) {
   if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) forms.add(base + "es");
   else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
   else forms.add(base + "s");
+  
+  // 否定形 (n't) の追加
+  if (CANDO.has(base)) {
+    if (base === "can") forms.add("can't");
+    else if (base === "will") forms.add("won't");
+    else if (base === "do") forms.add("don't");
+    else forms.add(base + "n't");
+  }
   return forms;
 }
 
@@ -803,6 +811,14 @@ function getPlurals(base) {
   if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) forms.add(base + "es");
   else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
   else forms.add(base + "s");
+  
+  // 単語リストでもCANDOに含まれるなら否定形を追加
+  if (CANDO.has(base)) {
+    if (base === "can") forms.add("can't");
+    else if (base === "will") forms.add("won't");
+    else if (base === "do") forms.add("don't");
+    else forms.add(base + "n't");
+  }
   return forms;
 }
 
@@ -841,10 +857,9 @@ async function resolveMultipleRanges() {
     const endIdx   = parseInt(row.querySelector(".end-hani").value) - 1;
     const s = Math.min(startIdx, endIdx), e = Math.max(startIdx, endIdx);
     for (let i = s; i <= e; i++) {
-      const startEntry = i === 0 ? 1 : haniNums[i - 1] + 1;
-      const endEntry   = haniNums[i];
-      // 指定した行番号（endEntry）まで確実に含める
-      for (let j = startEntry; j <= endEntry; j++) entrySet.add(j);
+      const startLine = i === 0 ? 1 : haniNums[i - 1] + 1;
+      const endLine   = haniNums[i];
+      for (let j = startLine; j <= endLine; j++) entrySet.add(j);
     }
   });
   return entrySet.size > 0 ? entrySet : null;
@@ -869,6 +884,11 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
         let forms = [p.term];
         if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
         else if (isWordsList && entry.parts.length === 1) forms = Array.from(getPlurals(p.term));
+        else if (!isWordsList && entry.parts.length === 1 && CANDO.has(p.term)) {
+           // 文法リストでタグがなくてもCANDOに含まれるなら否定形を追加
+           const candoForms = getPlurals(p.term);
+           forms = Array.from(candoForms);
+        }
         
         forms.forEach(f => {
           phrasePatterns.forEach(pat => {
@@ -958,17 +978,19 @@ async function loadWordList() {
   const bwRaw = await getRawList("bwitems"), imiRaw = await getRawList("imi"), haniRaw = await getRawList("hani"), haniNames = await getRawList("haniname");
   const haniNums = haniRaw.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
   let rows = '<div class="wl-wrap"><table class="wl-table"><thead><tr><th>語</th><th>意味</th></tr></thead><tbody>';
-  let sectionIdx = 0, nextBoundary = haniNums.length > 0 ? haniNums[0] : Infinity;
+  
+  let currentSection = 0;
   bwRaw.forEach((v, i) => {
-    const oneBasedIdx = i + 1;
-    if ((sectionIdx === 0 && oneBasedIdx === 1) || (sectionIdx > 0 && oneBasedIdx === haniNums[sectionIdx - 1] + 1)) {
-      rows += `<tr class="wl-section-row"><td colspan="2">${escHtml(haniNames[sectionIdx] || (sectionIdx + 1) + "ページ目")}</td></tr>`;
+    const lineNum = i + 1;
+    while (currentSection < haniNums.length && lineNum > (currentSection === 0 ? 0 : haniNums[currentSection - 1]) && lineNum === (currentSection === 0 ? 1 : haniNums[currentSection - 1] + 1)) {
+       rows += `<tr class="wl-section-row"><td colspan="2">${escHtml(haniNames[currentSection] || (currentSection + 1) + "ページ目")}</td></tr>`;
+       break;
     }
     const s = String(v); let term = null;
     if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim();
     else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim();
     if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
-    if (oneBasedIdx >= nextBoundary) { sectionIdx++; nextBoundary = haniNums[sectionIdx] ?? Infinity; }
+    if (lineNum >= haniNums[currentSection]) currentSection++;
   });
   el.innerHTML = rows + '</tbody></table></div>';
 }
