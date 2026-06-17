@@ -789,9 +789,11 @@ function getConjugations(base, doubleConsonant) {
   const forms = new Set([base]);
   const lastChar = base.slice(-1);
   if (doubleConsonant) { forms.add(base + lastChar + "ing"); forms.add(base + lastChar + "ed"); }
+  else if (/ie$/.test(base)) { forms.add(base.slice(0, -2) + "ying"); forms.add(base + "d"); }
   else if (/e$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base + "d"); }
   else if (/[^aeiou]y$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base.slice(0, -1) + "ied"); }
   else { forms.add(base + "ing"); forms.add(base + "ed"); }
+  
   if (/[sxzh]$/.test(base) || /[^aeiou]h$/.test(base)) forms.add(base + "es");
   else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
   else forms.add(base + "s");
@@ -885,7 +887,6 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
         if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
         else if (isWordsList && entry.parts.length === 1) forms = Array.from(getPlurals(p.term));
         else if (!isWordsList && entry.parts.length === 1 && CANDO.has(p.term)) {
-           // 文法リストでタグがなくてもCANDOに含まれるなら否定形を追加
            const candoForms = getPlurals(p.term);
            forms = Array.from(candoForms);
         }
@@ -1013,7 +1014,7 @@ async function doLookup() {
     ${i > 0 ? '<hr class="lookup-divider">' : ""}
     <div class="lookup-word">${escHtml(m.term)} <span style="font-size:0.7rem;color:#9ca3af;">${m.kind}</span></div>
     <div><div class="lookup-kind">意味</div><div class="lookup-val">${escHtml(imiRaw[m.idx] || "—")}</div></div>
-    <div><div class="lookup-kind">例文</div><div class="lookup-val">${escHtml(reibunRaw[m.idx] || "未制作")}</div></div>
+    <div><div class="lookup-kind">例文</div><div class="lookup-val">${escHtml(reibunRaw[m.idx] || "Don't make")}</div></div>
   `).join("");
 }
 document.getElementById("lookupBtn").addEventListener("click", doLookup);
