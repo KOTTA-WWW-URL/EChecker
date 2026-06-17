@@ -788,7 +788,10 @@ const CANDO = new Set(["can","will","may","must","should","might","could","would
 function getConjugations(base, doubleConsonant) {
   const forms = new Set([base]);
   const lastChar = base.slice(-1);
-  if (doubleConsonant) { forms.add(base + lastChar + "ing"); forms.add(base + lastChar + "ed"); }
+  if (doubleConsonant) { 
+    forms.add(base + lastChar + "ing"); 
+    forms.add(base + lastChar + "ed"); 
+  }
   else if (/ie$/.test(base)) { forms.add(base.slice(0, -2) + "ying"); forms.add(base + "d"); }
   else if (/e$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base + "d"); }
   else if (/[^aeiou]y$/.test(base)) { forms.add(base.slice(0, -1) + "ing"); forms.add(base.slice(0, -1) + "ied"); }
@@ -798,7 +801,6 @@ function getConjugations(base, doubleConsonant) {
   else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
   else forms.add(base + "s");
   
-  // 否定形 (n't) の追加
   if (CANDO.has(base)) {
     if (base === "can") forms.add("can't");
     else if (base === "will") forms.add("won't");
@@ -814,7 +816,6 @@ function getPlurals(base) {
   else if (/[^aeiou]y$/.test(base)) forms.add(base.slice(0, -1) + "ies");
   else forms.add(base + "s");
   
-  // 単語リストでもCANDOに含まれるなら否定形を追加
   if (CANDO.has(base)) {
     if (base === "can") forms.add("can't");
     else if (base === "will") forms.add("won't");
@@ -872,78 +873,84 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   if (!text.trim()) return;
   const bwRaw = await getRawList("bwitems"), entryFilter = await resolveMultipleRanges();
   const filteredBW = entryFilter ? bwRaw.filter((_, i) => entryFilter.has(i + 1)) : bwRaw;
-  const bumpouRaw = filterBW(filteredBW, "bumpou"), wordsRaw = filterBW(filteredBW, "words");
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
-  const tokenSet = new Set(textTokens);
   const joinedText = textTokens.join(" ");
 
-  function performCheck(rawList, isWordsList) {
-    const matched = [];
-    rawList.map(parseTerm).forEach(entry => {
-      let phrasePatterns = [[]];
-      entry.parts.forEach(p => {
-        let newPatterns = [];
-        let forms = [p.term];
-        if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
-        else if (isWordsList && entry.parts.length === 1) forms = Array.from(getPlurals(p.term));
-        else if (!isWordsList && entry.parts.length === 1 && CANDO.has(p.term)) {
-           const candoForms = getPlurals(p.term);
-           forms = Array.from(candoForms);
-        }
-        
-        forms.forEach(f => {
-          phrasePatterns.forEach(pat => {
-            newPatterns.push([...pat, f]);
-          });
-        });
-        phrasePatterns = newPatterns;
-      });
+  // すべてのマッチ候補を抽出
+  let candidates = [];
+  filteredBW.forEach(rawEntry => {
+    const isWordsList = String(rawEntry).startsWith("words:");
+    const entry = parseTerm(isWordsList ? String(rawEntry).slice(6) : String(rawEntry).slice(7));
+    
+    let phrasePatterns = [[]];
+    entry.parts.forEach(p => {
+      let newPatterns = [];
+      let forms = [p.term];
+      if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
+      else if (isWordsList && entry.parts.length === 1) forms = Array.from(getPlurals(p.term));
+      else if (!isWordsList && entry.parts.length === 1 && CANDO.has(p.term)) forms = Array.from(getPlurals(p.term));
+      
+      forms.forEach(f => { phrasePatterns.forEach(pat => { newPatterns.push([...pat, f]); }); });
+      phrasePatterns = newPatterns;
+    });
 
-      let found = false;
-      let matchedPhrase = "";
-      for (const pat of phrasePatterns) {
-        const phrase = pat.join(" ");
-        if (pat.length === 1) {
-          if (tokenSet.has(phrase)) { found = true; matchedPhrase = phrase; break; }
-        } else {
-          if (joinedText.includes(phrase)) { found = true; matchedPhrase = phrase; break; }
-        }
-      }
-
-      if (found) {
-        if (entry.irregular) {
-          let valid = false;
-          const phraseTokens = matchedPhrase.split(" ");
-          if (phraseTokens.length === 1) {
-            for (let i = 0; i < textTokens.length; i++) {
-              if (textTokens[i] === matchedPhrase) {
-                const next = textTokens[i + 1];
-                if (!next || !CANDO.has(next)) { valid = true; break; }
-              }
-            }
-          } else {
-            let pos = 0;
-            while (true) {
-              const idx = joinedText.indexOf(matchedPhrase, pos); if (idx === -1) break;
-              const after = joinedText.slice(idx + matchedPhrase.length).trim().split(" ")[0];
-              if (!after || !CANDO.has(after)) { valid = true; break; }
-              pos = idx + 1;
-            }
+    phrasePatterns.forEach(pat => {
+      const phrase = pat.join(" ");
+      let pos = -1;
+      while ((pos = joinedText.indexOf(phrase, pos + 1)) !== -1) {
+        // 単語の境界をチェック
+        const before = pos === 0 || joinedText[pos-1] === ' ';
+        const after = pos + phrase.length === joinedText.length || joinedText[pos + phrase.length] === ' ';
+        if (before && after) {
+          // !irregular! 等の特殊条件チェック
+          if (entry.irregular) {
+            const nextWord = joinedText.slice(pos + phrase.length).trim().split(" ")[0];
+            if (nextWord && CANDO.has(nextWord)) continue;
           }
-          if (!valid) return;
+          if (entry.commaRequired) {
+            const rawLower = text.toLowerCase();
+            const escaped = entry.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) continue;
+          }
+          candidates.push({
+            original: entry.original,
+            matchedPhrase: phrase,
+            start: pos,
+            end: pos + phrase.length,
+            isWords: isWordsList,
+            length: phrase.length
+          });
         }
-        if (entry.commaRequired) {
-          const rawLower = text.toLowerCase(), escaped = entry.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) return;
-        }
-        matched.push(entry.original);
       }
     });
-    return matched;
-  }
+  });
 
-  const bumpouMatched = performCheck(bumpouRaw, false);
-  const wordsMatched  = performCheck(wordsRaw, true);
+  // 重複排除ロジック
+  // 1. 開始位置でソート
+  candidates.sort((a, b) => a.start - b.start || b.length - a.length);
+
+  const finalBumpou = new Set();
+  const finalWords = new Set();
+  const usedRanges = [];
+
+  // wordsを優先して処理
+  candidates.filter(c => c.isWords).forEach(c => {
+    if (!usedRanges.some(r => (c.start < r.end && c.end > r.start))) {
+      finalWords.add(c.original);
+      usedRanges.push({start: c.start, end: c.end});
+    }
+  });
+
+  // bumpouを処理（既にwordsで使われた範囲はスキップ）
+  candidates.filter(c => !c.isWords).forEach(c => {
+    if (!usedRanges.some(r => (c.start < r.end && c.end > r.start))) {
+      finalBumpou.add(c.original);
+      usedRanges.push({start: c.start, end: c.end});
+    }
+  });
+
+  const bumpouMatched = Array.from(finalBumpou);
+  const wordsMatched = Array.from(finalWords);
   const resultDiv = document.getElementById("checkResult"); resultDiv.style.display = "flex"; resultDiv.style.flexDirection = "column";
   const bumpouCount = bumpouMatched.length, wordsCount = wordsMatched.length;
   const totalPoints = bumpouCount + wordsCount * 2, wordCount = textTokens.length;
