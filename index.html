@@ -825,13 +825,23 @@ function getPlurals(base) {
   return forms;
 }
 
+// ---- parseTerm: -c- フラグ対応 ----
+// -c- は語と語の間に置く: "What-c-for?" → parts=["what","for?"], crossSentenceCheck=true
+// crossSentenceCheck=true のとき、マッチした区間（元テキスト）に . や ? が含まれていたら無効
 function parseTerm(raw) {
   let rawStr = String(raw).trim().toLowerCase();
-  let irregular = false, commaRequired = false;
+  let irregular = false, commaRequired = false, crossSentenceCheck = false;
+
   if (rawStr.endsWith("!irregular!")) { rawStr = rawStr.replace(/!irregular!$/, "").trim(); irregular = true; }
   if (rawStr.endsWith("$irregular$")) { rawStr = rawStr.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
-  
-  const parts = rawStr.split(/\s+/);
+
+  // -c- フラグを検出して除去（語間のセパレータとして扱う）
+  if (rawStr.includes("-c-")) {
+    crossSentenceCheck = true;
+    rawStr = rawStr.replace(/-c-/g, " ");
+  }
+
+  const parts = rawStr.trim().split(/\s+/);
   const parsedParts = parts.map(p => {
     let term = p, conjugate = false, doubleConsonant = false;
     if (term.endsWith("%dd%")) { term = term.replace(/%dd%$/, ""); conjugate = true; doubleConsonant = true; }
@@ -840,11 +850,41 @@ function parseTerm(raw) {
   });
 
   return { 
-    original: rawStr.replace(/(%d%|%dd%)/g, ""),
+    original: rawStr.replace(/(%d%|%dd%)/g, "").replace(/\s+/g, " ").trim(),
     parts: parsedParts,
     irregular, 
-    commaRequired 
+    commaRequired,
+    crossSentenceCheck   // ← 追加
   };
+}
+
+// ---- 文境界チェック ----
+// トークン列上の [startTokenIdx, endTokenIdx) の区間が元テキスト上で
+// 同一文（. や ? をまたがない）かを確認する
+// textTokens: テキストをトークン分割した配列
+// originalText: 元のテキスト（小文字化前）
+// phraseTokenCount: フレーズのトークン数
+// matchedTokenStart: マッチ開始トークンインデックス
+function isWithinSameSentence(originalText, matchedTokenStart, phraseTokenCount) {
+  // テキスト全体を小文字化してトークン位置を求める
+  const lower = originalText.toLowerCase();
+  // トークンを順に検索して文字位置を取得
+  const tokenRegex = /[a-zA-Z'-]+/g;
+  const tokenPositions = [];
+  let m;
+  while ((m = tokenRegex.exec(lower)) !== null) {
+    tokenPositions.push({ start: m.index, end: m.index + m[0].length });
+  }
+
+  if (matchedTokenStart + phraseTokenCount - 1 >= tokenPositions.length) return false;
+
+  const charStart = tokenPositions[matchedTokenStart].start;
+  const charEnd   = tokenPositions[matchedTokenStart + phraseTokenCount - 1].end;
+
+  // charStart〜charEnd の間の文字列に . や ? が含まれるか
+  // （最初のトークン直後から最後のトークン直前までを調べる）
+  const between = lower.slice(charStart, charEnd);
+  return !/[.?!]/.test(between);
 }
 
 // ---- Check Logic ----
@@ -896,6 +936,7 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
 
     phrasePatterns.forEach(pat => {
       const phrase = pat.join(" ");
+      const phraseTokenCount = pat.length;
       let pos = -1;
       while ((pos = joinedText.indexOf(phrase, pos + 1)) !== -1) {
         // 単語の境界をチェック
@@ -912,6 +953,15 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
             const escaped = entry.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) continue;
           }
+
+          // -c- フラグ: 同一文チェック（. や ? をまたいでいたらスキップ）
+          if (entry.crossSentenceCheck && phraseTokenCount > 1) {
+            // joinedText 上でのマッチ開始トークンインデックスを求める
+            const tokensBefore = joinedText.slice(0, pos).split(" ").filter(t => t.length > 0);
+            const matchedTokenStart = tokensBefore.length;
+            if (!isWithinSameSentence(text, matchedTokenStart, phraseTokenCount)) continue;
+          }
+
           candidates.push({
             original: entry.original,
             matchedPhrase: phrase,
@@ -926,7 +976,6 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   });
 
   // 重複排除ロジック
-  // 1. 開始位置でソート
   candidates.sort((a, b) => a.start - b.start || b.length - a.length);
 
   const finalBumpou = new Set();
@@ -995,8 +1044,8 @@ async function loadWordList() {
        break;
     }
     const s = String(v); let term = null;
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim();
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
     if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
     if (lineNum >= haniNums[currentSection]) currentSection++;
   });
@@ -1011,9 +1060,9 @@ async function doLookup() {
   const matches = [];
   bwRaw.forEach((v, i) => {
     const s = String(v); let term = "";
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim().toLowerCase();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").trim().toLowerCase();
-    if (term === query) matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: s.split(":")[1].replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, ""), idx: i });
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (term === query) matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: s.split(":")[1].replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim(), idx: i });
   });
   const res = document.getElementById("lookupResult"); res.style.display = "flex";
   if (!matches.length) { res.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" は見つかりませんでした。</div>`; return; }
