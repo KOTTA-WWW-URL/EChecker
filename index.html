@@ -825,64 +825,71 @@ function getPlurals(base) {
   return forms;
 }
 
-// ---- parseTerm: -c- フラグ対応 ----
-// -c- は語と語の間に置く: "What-c-for?" → parts=["what","for?"], crossSentenceCheck=true
-// crossSentenceCheck=true のとき、マッチした区間（元テキスト）に . や ? が含まれていたら無効
+// ---- parseTerm: -c- フラグ対応（ギャップマッチ） ----
+// -c- は「始点」と「終点」の間に置く: "What-c-for?" → startParts=["what"], endParts=["for?"]
+// テキスト上で start...end の間に任意の語を挟んでよいが、. ? ! があれば無効（文をまたぐため）
 function parseTerm(raw) {
   let rawStr = String(raw).trim().toLowerCase();
-  let irregular = false, commaRequired = false, crossSentenceCheck = false;
+  let irregular = false, commaRequired = false, isGap = false;
 
   if (rawStr.endsWith("!irregular!")) { rawStr = rawStr.replace(/!irregular!$/, "").trim(); irregular = true; }
   if (rawStr.endsWith("$irregular$")) { rawStr = rawStr.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
 
-  // -c- フラグを検出して除去（語間のセパレータとして扱う）
-  if (rawStr.includes("-c-")) {
-    crossSentenceCheck = true;
-    rawStr = rawStr.replace(/-c-/g, " ");
+  function toParts(str) {
+    return str.trim().split(/\s+/).filter(Boolean).map(p => {
+      let term = p, conjugate = false, doubleConsonant = false;
+      if (term.endsWith("%dd%")) { term = term.replace(/%dd%$/, ""); conjugate = true; doubleConsonant = true; }
+      else if (term.endsWith("%d%")) { term = term.replace(/%d%$/, ""); conjugate = true; }
+      // joinedText はトークン化時に [a-zA-Z'-]+ のみ残るため、句読点（?!.,等）を除去しておく
+      term = term.replace(/[^a-z'-]+$/g, "").replace(/^[^a-z'-]+/g, "");
+      return { term, conjugate, doubleConsonant };
+    });
   }
 
-  const parts = rawStr.trim().split(/\s+/);
-  const parsedParts = parts.map(p => {
-    let term = p, conjugate = false, doubleConsonant = false;
-    if (term.endsWith("%dd%")) { term = term.replace(/%dd%$/, ""); conjugate = true; doubleConsonant = true; }
-    else if (term.endsWith("%d%")) { term = term.replace(/%d%$/, ""); conjugate = true; }
-    return { term, conjugate, doubleConsonant };
-  });
+  // -c- フラグ: 始点と終点に分割（ギャップマッチ）
+  if (rawStr.includes("-c-")) {
+    isGap = true;
+    const [startStr, endStr] = rawStr.split("-c-");
+    return {
+      original: rawStr.replace(/-c-/g, "~").replace(/(%d%|%dd%)/g, "").replace(/\s+/g, " ").trim(),
+      isGap: true,
+      startParts: toParts(startStr || ""),
+      endParts: toParts(endStr || ""),
+      irregular,
+      commaRequired
+    };
+  }
+
+  const parsedParts = toParts(rawStr);
 
   return { 
     original: rawStr.replace(/(%d%|%dd%)/g, "").replace(/\s+/g, " ").trim(),
     parts: parsedParts,
     irregular, 
     commaRequired,
-    crossSentenceCheck   // ← 追加
+    isGap: false
   };
 }
 
-// ---- 文境界チェック ----
-// トークン列上の [startTokenIdx, endTokenIdx) の区間が元テキスト上で
-// 同一文（. や ? をまたがない）かを確認する
-// textTokens: テキストをトークン分割した配列
-// originalText: 元のテキスト（小文字化前）
-// phraseTokenCount: フレーズのトークン数
-// matchedTokenStart: マッチ開始トークンインデックス
-function isWithinSameSentence(originalText, matchedTokenStart, phraseTokenCount) {
-  // テキスト全体を小文字化してトークン位置を求める
+// ---- トークン文字位置の取得 ----
+function getTokenPositions(originalText) {
   const lower = originalText.toLowerCase();
-  // トークンを順に検索して文字位置を取得
   const tokenRegex = /[a-zA-Z'-]+/g;
   const tokenPositions = [];
   let m;
   while ((m = tokenRegex.exec(lower)) !== null) {
     tokenPositions.push({ start: m.index, end: m.index + m[0].length });
   }
+  return tokenPositions;
+}
 
-  if (matchedTokenStart + phraseTokenCount - 1 >= tokenPositions.length) return false;
-
-  const charStart = tokenPositions[matchedTokenStart].start;
-  const charEnd   = tokenPositions[matchedTokenStart + phraseTokenCount - 1].end;
-
-  // charStart〜charEnd の間の文字列に . や ? が含まれるか
-  // （最初のトークン直後から最後のトークン直前までを調べる）
+// firstTokenIdx 〜 lastTokenIdx（両端含む、トークンインデックス）の間に
+// 元テキスト上で . ? ! が含まれていないかを確認する
+function hasNoSentenceBreakBetween(originalText, tokenPositions, firstTokenIdx, lastTokenIdx) {
+  if (firstTokenIdx < 0 || lastTokenIdx >= tokenPositions.length || firstTokenIdx > lastTokenIdx) return false;
+  const lower = originalText.toLowerCase();
+  const charStart = tokenPositions[firstTokenIdx].start;
+  const charEnd   = tokenPositions[lastTokenIdx].end;
   const between = lower.slice(charStart, charEnd);
   return !/[.?!]/.test(between);
 }
@@ -915,28 +922,91 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const filteredBW = entryFilter ? bwRaw.filter((_, i) => entryFilter.has(i + 1)) : bwRaw;
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const joinedText = textTokens.join(" ");
+  const tokenPositions = getTokenPositions(text);
+
+  // パーツ配列（conjugate/doubleConsonant情報付き）から、フレーズ文字列のバリエーション一覧を作る
+  function buildPhraseVariants(parts, isWordsList) {
+    let phrasePatterns = [[]];
+    parts.forEach(p => {
+      let newPatterns = [];
+      let forms = [p.term];
+      if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
+      else if (isWordsList && parts.length === 1) forms = Array.from(getPlurals(p.term));
+      else if (!isWordsList && parts.length === 1 && CANDO.has(p.term)) forms = Array.from(getPlurals(p.term));
+      forms.forEach(f => { phrasePatterns.forEach(pat => { newPatterns.push([...pat, f]); }); });
+      phrasePatterns = newPatterns;
+    });
+    return phrasePatterns.map(pat => ({ phrase: pat.join(" "), tokenCount: pat.length }));
+  }
+
+  // joinedText 上の文字位置 pos から、トークンインデックスを求める
+  function charPosToTokenIdx(pos) {
+    return joinedText.slice(0, pos).split(" ").filter(t => t.length > 0).length;
+  }
 
   // すべてのマッチ候補を抽出
   let candidates = [];
   filteredBW.forEach(rawEntry => {
     const isWordsList = String(rawEntry).startsWith("words:");
     const entry = parseTerm(isWordsList ? String(rawEntry).slice(6) : String(rawEntry).slice(7));
-    
-    let phrasePatterns = [[]];
-    entry.parts.forEach(p => {
-      let newPatterns = [];
-      let forms = [p.term];
-      if (p.conjugate) forms = Array.from(getConjugations(p.term, p.doubleConsonant));
-      else if (isWordsList && entry.parts.length === 1) forms = Array.from(getPlurals(p.term));
-      else if (!isWordsList && entry.parts.length === 1 && CANDO.has(p.term)) forms = Array.from(getPlurals(p.term));
-      
-      forms.forEach(f => { phrasePatterns.forEach(pat => { newPatterns.push([...pat, f]); }); });
-      phrasePatterns = newPatterns;
-    });
 
-    phrasePatterns.forEach(pat => {
-      const phrase = pat.join(" ");
-      const phraseTokenCount = pat.length;
+    // ---- -c- ギャップマッチ ----
+    if (entry.isGap) {
+      const startVariants = buildPhraseVariants(entry.startParts, isWordsList);
+      const endVariants = buildPhraseVariants(entry.endParts, isWordsList);
+      if (!startVariants.length || !endVariants.length) return;
+
+      // 始点フレーズのすべての出現位置を集める
+      let startOccurrences = [];
+      startVariants.forEach(sv => {
+        let pos = -1;
+        while ((pos = joinedText.indexOf(sv.phrase, pos + 1)) !== -1) {
+          const before = pos === 0 || joinedText[pos-1] === ' ';
+          const after = pos + sv.phrase.length === joinedText.length || joinedText[pos + sv.phrase.length] === ' ';
+          if (before && after) startOccurrences.push({ pos, tokenCount: sv.tokenCount });
+        }
+      });
+      // 終点フレーズのすべての出現位置を集める
+      let endOccurrences = [];
+      endVariants.forEach(ev => {
+        let pos = -1;
+        while ((pos = joinedText.indexOf(ev.phrase, pos + 1)) !== -1) {
+          const before = pos === 0 || joinedText[pos-1] === ' ';
+          const after = pos + ev.phrase.length === joinedText.length || joinedText[pos + ev.phrase.length] === ' ';
+          if (before && after) endOccurrences.push({ pos, end: pos + ev.phrase.length, tokenCount: ev.tokenCount });
+        }
+      });
+      if (!startOccurrences.length || !endOccurrences.length) return;
+
+      // 各始点について、その後ろにある一番近い終点とペアにする
+      startOccurrences.forEach(so => {
+        const candidatesEnd = endOccurrences.filter(eo => eo.pos > so.pos).sort((a, b) => a.pos - b.pos);
+        if (!candidatesEnd.length) return;
+        const eo = candidatesEnd[0]; // 一番近い終点
+
+        const startTokenIdx = charPosToTokenIdx(so.pos);
+        const startTokenEndIdx = startTokenIdx + so.tokenCount - 1;
+        const endTokenIdx = charPosToTokenIdx(eo.pos);
+        const endTokenEndIdx = endTokenIdx + eo.tokenCount - 1;
+
+        // 間に . ? ! がないか確認（語数に上限なし）
+        if (!hasNoSentenceBreakBetween(text, tokenPositions, startTokenIdx, endTokenEndIdx)) return;
+
+        candidates.push({
+          original: entry.original,
+          matchedPhrase: joinedText.slice(so.pos, eo.end),
+          start: so.pos,
+          end: eo.end,
+          isWords: isWordsList,
+          length: eo.end - so.pos
+        });
+      });
+      return;
+    }
+
+    // ---- 通常の隣接フレーズマッチ ----
+    const variants = buildPhraseVariants(entry.parts, isWordsList);
+    variants.forEach(({ phrase, tokenCount: phraseTokenCount }) => {
       let pos = -1;
       while ((pos = joinedText.indexOf(phrase, pos + 1)) !== -1) {
         // 単語の境界をチェック
@@ -954,14 +1024,6 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
             if (!(new RegExp(",\\s*" + escaped)).test(rawLower)) continue;
           }
 
-          // -c- フラグ: 同一文チェック（. や ? をまたいでいたらスキップ）
-          if (entry.crossSentenceCheck && phraseTokenCount > 1) {
-            // joinedText 上でのマッチ開始トークンインデックスを求める
-            const tokensBefore = joinedText.slice(0, pos).split(" ").filter(t => t.length > 0);
-            const matchedTokenStart = tokensBefore.length;
-            if (!isWithinSameSentence(text, matchedTokenStart, phraseTokenCount)) continue;
-          }
-
           candidates.push({
             original: entry.original,
             matchedPhrase: phrase,
@@ -977,6 +1039,8 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
 
   // 重複排除ロジック
   candidates.sort((a, b) => a.start - b.start || b.length - a.length);
+
+
 
   const finalBumpou = new Set();
   const finalWords = new Set();
