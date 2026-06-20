@@ -658,6 +658,7 @@ function initCmdMessages() {
   cmdOutput.innerHTML = "";
   print("Firebase 接続済み ✓", "cmd-ok");
   print("add f haniname 'Lesson 1'  /  show haniname", "cmd-info");
+  print("replaceall 3 hani 10  (index 3〜最後のhaniに+10)", "cmd-info");
 }
 
 async function addTo(pos, name, val) {
@@ -736,6 +737,26 @@ async function handleCmd(raw) {
     await saveList(name, arr);
     print(`置換完了`, "cmd-ok");
     if (name === "haniname") await initHaniUI();
+    return;
+  }
+
+  if (cmd === "replaceall") {
+    const startPos = tokens[1], name = tokens[2], deltaStr = tokens[3];
+    if (!startPos || !name || deltaStr === undefined) { print("エラー: replaceall &lt;番号&gt; hani &lt;増分値&gt;", "cmd-err"); return; }
+    if (name !== "hani") { print(`エラー: replaceall は hani のみ対応しています`, "cmd-err"); return; }
+    const startIdx = parseInt(startPos);
+    const delta = parseInt(deltaStr);
+    if (isNaN(startIdx) || startIdx < 0) { print(`エラー: 開始位置が不正です`, "cmd-err"); return; }
+    if (isNaN(delta)) { print(`エラー: 増分値が不正です`, "cmd-err"); return; }
+    const arr = await getRawList("hani");
+    if (startIdx >= arr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
+    let changed = 0;
+    for (let i = startIdx; i < arr.length; i++) {
+      const n = parseInt(String(arr[i]).trim());
+      if (!isNaN(n)) { arr[i] = String(n + delta); changed++; }
+    }
+    await saveRawList("hani", arr);
+    print(`一括更新完了: [hani] index ${startIdx} 〜 ${arr.length - 1} の ${changed} 件に ${delta >= 0 ? "+" : ""}${delta} しました`, "cmd-ok");
     return;
   }
   print(`不明なコマンド: "${escHtml(cmd)}"`, "cmd-err");
