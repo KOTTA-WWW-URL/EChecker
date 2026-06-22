@@ -579,7 +579,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const LISTS = ["bumpou", "hani", "words", "imi", "reibun", "haniname"];
+const LISTS = ["bumpou", "hani", "words", "imi", "reibun", "haniname", "or"];
 let isAdmin = false;
 let globalHaniNames = [];
 
@@ -941,6 +941,18 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   if (!text.trim()) return;
   const bwRaw = await getRawList("bwitems"), entryFilter = await resolveMultipleRanges();
   const filteredBW = entryFilter ? bwRaw.filter((_, i) => entryFilter.has(i + 1)) : bwRaw;
+
+  // orリスト読み込み: ["1-4", "91-98"] → 各グループをbwitemsの1始まりインデックスセットに変換
+  const orRaw = await getRawList("or");
+  const orGroups = orRaw.map(v => {
+    const str = String(v).trim();
+    const m = str.match(/^(\d+)-(\d+)$/);
+    if (!m) return null;
+    const s = parseInt(m[1]), e = parseInt(m[2]);
+    const grpSet = new Set();
+    for (let i = Math.min(s, e); i <= Math.max(s, e); i++) grpSet.add(i);
+    return grpSet;
+  }).filter(Boolean);
   const textTokens = text.toLowerCase().match(/[a-zA-Z'-]+/g) || [];
   const joinedText = textTokens.join(" ");
   const tokenPositions = getTokenPositions(text);
@@ -967,7 +979,12 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
 
   // すべてのマッチ候補を抽出
   let candidates = [];
-  filteredBW.forEach(rawEntry => {
+  // filteredBW の各要素について元bwRawでの1始まりインデックスを追跡
+  const filteredBWWithIdx = entryFilter
+    ? bwRaw.map((v, i) => ({ v, bwIndex: i + 1 })).filter(({ bwIndex }) => entryFilter.has(bwIndex))
+    : bwRaw.map((v, i) => ({ v, bwIndex: i + 1 }));
+
+  filteredBWWithIdx.forEach(({ v: rawEntry, bwIndex }) => {
     const isWordsList = String(rawEntry).startsWith("words:");
     const entry = parseTerm(isWordsList ? String(rawEntry).slice(6) : String(rawEntry).slice(7));
 
@@ -1019,7 +1036,8 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
           start: so.pos,
           end: eo.end,
           isWords: isWordsList,
-          length: eo.end - so.pos
+          length: eo.end - so.pos,
+          bwIndex
         });
       });
       return;
@@ -1051,12 +1069,30 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
             start: pos,
             end: pos + phrase.length,
             isWords: isWordsList,
-            length: phrase.length
+            length: phrase.length,
+            bwIndex
           });
         }
       }
     });
   });
+
+  // orグループフィルタリング:
+  // 各グループ内で最初にマッチした1件のみ残し、同グループの他候補は除外
+  if (orGroups.length > 0) {
+    const matchedOrGroups = new Set(); // どのgrpIdxが既にマッチ済みか
+    // candidatesをstart昇順→length降順でソート済みと仮定して処理
+    candidates = candidates.filter(c => {
+      for (let gi = 0; gi < orGroups.length; gi++) {
+        if (orGroups[gi].has(c.bwIndex)) {
+          if (matchedOrGroups.has(gi)) return false; // 同グループが既にマッチ済み → 除外
+          matchedOrGroups.add(gi);
+          return true;
+        }
+      }
+      return true; // orグループに属さない候補はそのまま
+    });
+  }
 
   // 重複排除ロジック
   candidates.sort((a, b) => a.start - b.start || b.length - a.length);
