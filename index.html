@@ -981,8 +981,8 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   let candidates = [];
   // filteredBW の各要素について元bwRawでの1始まりインデックスを追跡
   const filteredBWWithIdx = entryFilter
-    ? bwRaw.map((v, i) => ({ v, bwIndex: i + 1 })).filter(({ bwIndex }) => entryFilter.has(bwIndex))
-    : bwRaw.map((v, i) => ({ v, bwIndex: i + 1 }));
+    ? bwRaw.map((v, i) => ({ v, bwIndex: i })).filter(({ bwIndex }) => entryFilter.has(bwIndex + 1))
+    : bwRaw.map((v, i) => ({ v, bwIndex: i }));
 
   filteredBWWithIdx.forEach(({ v: rawEntry, bwIndex }) => {
     const isWordsList = String(rawEntry).startsWith("words:");
@@ -1077,25 +1077,29 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     });
   });
 
+  // ソートを先に行い、位置が早い順でorフィルタリングする
+  candidates.sort((a, b) => a.start - b.start || b.length - a.length);
+
   // orグループフィルタリング:
   // 各グループ内で最初にマッチした1件のみ残し、同グループの他候補は除外
+  // 同じbwIndexが文中に複数回出現しても1回のみカウント
   if (orGroups.length > 0) {
-    const matchedOrGroups = new Set(); // どのgrpIdxが既にマッチ済みか
-    // candidatesをstart昇順→length降順でソート済みと仮定して処理
+    const matchedOrGroups = new Set();
+    const matchedBwIndices = new Set();
     candidates = candidates.filter(c => {
       for (let gi = 0; gi < orGroups.length; gi++) {
         if (orGroups[gi].has(c.bwIndex)) {
-          if (matchedOrGroups.has(gi)) return false; // 同グループが既にマッチ済み → 除外
+          if (matchedOrGroups.has(gi) || matchedBwIndices.has(c.bwIndex)) return false;
           matchedOrGroups.add(gi);
+          matchedBwIndices.add(c.bwIndex);
           return true;
         }
       }
-      return true; // orグループに属さない候補はそのまま
+      return true;
     });
   }
 
-  // 重複排除ロジック
-  candidates.sort((a, b) => a.start - b.start || b.length - a.length);
+  // 重複排除ロジック（orフィルタリング後なのでソート済み）
 
 
 
