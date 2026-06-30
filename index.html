@@ -915,6 +915,34 @@ function hasNoSentenceBreakBetween(originalText, tokenPositions, firstTokenIdx, 
   return !/[.?!]/.test(between);
 }
 
+// !irregular! 新ロジック:
+// マッチ語の直前が . ? ! のいずれか（文頭）の場合のみ判定する。
+// 文頭の場合、マッチ語より右側で . か ! より先に ? が来たらNG（カウントしない）。
+// . も ! も ? も見つからずテキストが終わった場合は CANDO リストでフォールバック判定する。
+// 文頭でない場合（直前に記号がない）は常にOK（カウントする）。
+function isIrregularOk(originalText, tokenPositions, firstTokenIdx, lastTokenIdx, nextWordForFallback) {
+  const lower = originalText.toLowerCase();
+  const matchStartChar = tokenPositions[firstTokenIdx].start;
+
+  // 直前の文字（空白をスキップして直前の非空白文字）を見る
+  let i = matchStartChar - 1;
+  while (i >= 0 && /\s/.test(lower[i])) i--;
+  const prevChar = i >= 0 ? lower[i] : null;
+  const isSentenceStart = prevChar === '.' || prevChar === '?' || prevChar === '!';
+
+  if (!isSentenceStart) return true; // 文中 → 無条件でOK
+
+  // 文頭の場合: マッチ語の終わりより右側を見て、. か ! より先に ? が来たらNG
+  const matchEndChar = tokenPositions[lastTokenIdx].end;
+  const rest = lower.slice(matchEndChar);
+  const m = rest.match(/[.?!]/);
+  if (!m) {
+    // . も ? も ! も見つからない → CANDOリストでフォールバック
+    return !(nextWordForFallback && CANDO.has(nextWordForFallback));
+  }
+  return m[0] !== '?'; // 最初に見つかった記号が ? ならNG、. か ! ならOK
+}
+
 // ---- Check Logic ----
 async function resolveMultipleRanges() {
   const container = document.getElementById("rangeContainer");
@@ -1052,10 +1080,12 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
         const before = pos === 0 || joinedText[pos-1] === ' ';
         const after = pos + phrase.length === joinedText.length || joinedText[pos + phrase.length] === ' ';
         if (before && after) {
-          // !irregular! 等の特殊条件チェック
+          // !irregular! 新ロジック: 文頭判定 + . ? ! の先着判定（フォールバックはCANDO）
           if (entry.irregular) {
+            const firstTokenIdx = charPosToTokenIdx(pos);
+            const lastTokenIdx = firstTokenIdx + phraseTokenCount - 1;
             const nextWord = joinedText.slice(pos + phrase.length).trim().split(" ")[0];
-            if (nextWord && CANDO.has(nextWord)) continue;
+            if (!isIrregularOk(text, tokenPositions, firstTokenIdx, lastTokenIdx, nextWord)) continue;
           }
           if (entry.commaRequired) {
             const rawLower = text.toLowerCase();
