@@ -931,12 +931,8 @@ function isIrregularOk(originalText, tokenPositions, firstTokenIdx, lastTokenIdx
   const prevChar = i >= 0 ? lower[i] : null;
   let isSentenceStart = prevChar === '.' || prevChar === '?' || prevChar === '!';
 
-  // 直前が記号でなくても、マッチ語より前のテキスト全体に . ? ! が一度も出ていなければ
-  // テキストの実質的な先頭として「文頭」扱いにする
-  if (!isSentenceStart) {
-    const before = lower.slice(0, matchStartChar);
-    if (!/[.?!]/.test(before)) isSentenceStart = true;
-  }
+  // 直前が記号でなくても、テキストの絶対先頭（直前に何も文字がない）なら文頭扱い
+  if (!isSentenceStart && prevChar === null) isSentenceStart = true;
 
   if (!isSentenceStart) return true; // 文中 → 無条件でOK
 
