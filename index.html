@@ -794,6 +794,11 @@ function addRangeRow() {
       <span class="range-dash">–</span>
       <select class="range-select end-hani">${options}</select>
     </div>
+    <select class="range-select range-type">
+      <option value="both">両方</option>
+      <option value="words">単語</option>
+      <option value="bumpou">文法</option>
+    </select>
     <button class="btn-remove-range">✕</button>
   `;
   row.querySelector(".btn-remove-range").addEventListener("click", () => {
@@ -948,31 +953,40 @@ function isIrregularOk(originalText, tokenPositions, firstTokenIdx, lastTokenIdx
 }
 
 // ---- Check Logic ----
+// 戻り値: Map<bwIndex(1始まり), type("both"|"words"|"bumpou")> または null（全範囲）
 async function resolveMultipleRanges() {
   const container = document.getElementById("rangeContainer");
   const rows = container.querySelectorAll(".range-row");
   const haniList = await getList("hani");
   if (!haniList.length) return null;
   const haniNums = haniList.map(v => parseInt(String(v).trim())).filter(n => !isNaN(n));
-  let entrySet = new Set();
+  // エントリインデックス → 最も制限の緩いtype（同じエントリが複数行でヒットした場合はbothを優先）
+  const typeOrder = { both: 2, words: 1, bumpou: 1 };
+  const entryTypeMap = new Map();
   rows.forEach(row => {
     const startIdx = parseInt(row.querySelector(".start-hani").value) - 1;
     const endIdx   = parseInt(row.querySelector(".end-hani").value) - 1;
+    const type = row.querySelector(".range-type").value;
     const s = Math.min(startIdx, endIdx), e = Math.max(startIdx, endIdx);
     for (let i = s; i <= e; i++) {
       const startLine = i === 0 ? 1 : haniNums[i - 1] + 1;
       const endLine   = haniNums[i];
-      for (let j = startLine; j <= endLine; j++) entrySet.add(j);
+      for (let j = startLine; j <= endLine; j++) {
+        // 同じインデックスが複数行でヒットした場合はbothを優先
+        if (!entryTypeMap.has(j) || type === "both") {
+          entryTypeMap.set(j, type);
+        }
+      }
     }
   });
-  return entrySet.size > 0 ? entrySet : null;
+  return entryTypeMap.size > 0 ? entryTypeMap : null;
 }
 
 document.getElementById("checkBtn").addEventListener("click", async () => {
   const text = document.getElementById("mainText").value;
   if (!text.trim()) return;
-  const bwRaw = await getRawList("bwitems"), entryFilter = await resolveMultipleRanges();
-  const filteredBW = entryFilter ? bwRaw.filter((_, i) => entryFilter.has(i + 1)) : bwRaw;
+  const bwRaw = await getRawList("bwitems"), entryTypeMap = await resolveMultipleRanges();
+  const filteredBW = entryTypeMap ? bwRaw.filter((_, i) => entryTypeMap.has(i + 1)) : bwRaw;
 
   // orリスト読み込み: ["1-4", "91-98"] → 各グループをbwitemsの1始まりインデックスセットに変換
   const orRaw = await getRawList("or");
@@ -1011,13 +1025,16 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
 
   // すべてのマッチ候補を抽出
   let candidates = [];
-  // filteredBW の各要素について元bwRawでの1始まりインデックスを追跡
-  const filteredBWWithIdx = entryFilter
-    ? bwRaw.map((v, i) => ({ v, bwIndex: i })).filter(({ bwIndex }) => entryFilter.has(bwIndex + 1))
-    : bwRaw.map((v, i) => ({ v, bwIndex: i }));
+  // filteredBW の各要素について元bwRawでの0始まりインデックスとtypeを追跡
+  const filteredBWWithIdx = entryTypeMap
+    ? bwRaw.map((v, i) => ({ v, bwIndex: i, entryType: entryTypeMap.get(i + 1) })).filter(({ entryType }) => entryType !== undefined)
+    : bwRaw.map((v, i) => ({ v, bwIndex: i, entryType: "both" }));
 
-  filteredBWWithIdx.forEach(({ v: rawEntry, bwIndex }) => {
+  filteredBWWithIdx.forEach(({ v: rawEntry, bwIndex, entryType }) => {
     const isWordsList = String(rawEntry).startsWith("words:");
+    // typeフィルタ: "words"なら単語のみ、"bumpou"なら文法のみ、"both"は両方
+    if (entryType === "words" && !isWordsList) return;
+    if (entryType === "bumpou" && isWordsList) return;
     const entry = parseTerm(isWordsList ? String(rawEntry).slice(6) : String(rawEntry).slice(7));
 
     // ---- -c- ギャップマッチ ----
