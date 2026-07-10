@@ -759,6 +759,26 @@ async function handleCmd(raw) {
     print(`一括更新完了: [hani] index ${startIdx} 〜 ${arr.length - 1} の ${changed} 件に ${delta >= 0 ? "+" : ""}${delta} しました`, "cmd-ok");
     return;
   }
+  if (cmd === "cmd") {
+    print("━━━━ コマンド一覧 ━━━━", "cmd-ok");
+    print("show &lt;list&gt;                    リストの内容を表示", "cmd-info");
+    print("add &lt;f|番号&gt; &lt;list&gt; &lt;値&gt;       リストに追加（f=末尾）", "cmd-info");
+    print("add &lt;f|番号&gt; allb &lt;語&gt; &lt;意味&gt; &lt;例文&gt;  bumpou+imi+reibun を一括追加", "cmd-info");
+    print("add &lt;f|番号&gt; allw &lt;語&gt; &lt;意味&gt; &lt;例文&gt;  words+imi+reibun を一括追加", "cmd-info");
+    print("remove &lt;f|番号&gt; &lt;list&gt;          リストから削除", "cmd-info");
+    print("replace &lt;f|番号&gt; &lt;list&gt; &lt;新値&gt;  リストの値を置換", "cmd-info");
+    print("replaceall &lt;番号&gt; hani &lt;増分&gt;    haniの指定index以降に増分を加算", "cmd-info");
+    print("━━━━ リスト名 ━━━━", "cmd-ok");
+    print("bumpou / words / imi / reibun / hani / haniname / or", "cmd-info");
+    print("━━━━ 特殊フラグ ━━━━", "cmd-ok");
+    print("%d%   動詞の活用形を自動生成 (例: look%d% → looks/looked/looking)", "cmd-info");
+    print("%dd%  子音を重ねた活用形を自動生成 (例: top%dd% → tops/topped/topping)", "cmd-info");
+    print("!irregular!  文頭判定あり: 直後に?が来る文ではカウントしない (例: What!irregular!)", "cmd-info");
+    print("$irregular$  直前にカンマが必要な表現 (例: although$irregular$)", "cmd-info");
+    print("-c-   ギャップマッチ: 始点〜終点の間に任意の語を許容 (例: What-c-for?)", "cmd-info");
+    print("$be$  be動詞の全活用でマッチ (例: $be$ able to → is/are/was/were able to など)", "cmd-info");
+    return;
+  }
   print(`不明なコマンド: "${escHtml(cmd)}"`, "cmd-err");
 }
 
@@ -851,12 +871,14 @@ function getPlurals(base) {
   return forms;
 }
 
-// ---- parseTerm: -c- フラグ対応（ギャップマッチ） ----
-// -c- は「始点」と「終点」の間に置く: "What-c-for?" → startParts=["what"], endParts=["for?"]
-// テキスト上で start...end の間に任意の語を挟んでよいが、. ? ! があれば無効（文をまたぐため）
+// be動詞の活用形リスト（$be$フラグ用）
+// "i'm" などの短縮形も含む
+const BE_FORMS = ["be", "is", "are", "am", "was", "were", "i'm", "he's", "she's", "it's", "you're", "we're", "they're", "i was", "he was", "she was", "it was", "you were", "we were", "they were"];
+
+// ---- parseTerm: -c- / $be$ フラグ対応 ----
 function parseTerm(raw) {
   let rawStr = String(raw).trim().toLowerCase();
-  let irregular = false, commaRequired = false, isGap = false;
+  let irregular = false, commaRequired = false, isGap = false, isBe = false;
 
   if (rawStr.endsWith("!irregular!")) { rawStr = rawStr.replace(/!irregular!$/, "").trim(); irregular = true; }
   if (rawStr.endsWith("$irregular$")) { rawStr = rawStr.replace(/\$irregular\$$/, "").trim(); commaRequired = true; }
@@ -886,6 +908,21 @@ function parseTerm(raw) {
     };
   }
 
+  // $be$ フラグ: be動詞の全活用形でマッチ
+  // 例: "$be$ able to" → "be able to" / "is able to" / "i'm able to" など
+  if (rawStr.includes("$be$")) {
+    isBe = true;
+    const rest = rawStr.replace(/\$be\$\s*/, ""); // $be$ の後ろの部分
+    const restParts = toParts(rest);
+    return {
+      original: ("be " + rest).replace(/(%d%|%dd%)/g, "").replace(/\s+/g, " ").trim(),
+      isBe: true,
+      beRest: restParts,  // be動詞の後ろに続くパーツ
+      irregular,
+      commaRequired
+    };
+  }
+
   const parsedParts = toParts(rawStr);
 
   return { 
@@ -893,7 +930,8 @@ function parseTerm(raw) {
     parts: parsedParts,
     irregular, 
     commaRequired,
-    isGap: false
+    isGap: false,
+    isBe: false
   };
 }
 
@@ -1036,6 +1074,34 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
     if (entryType === "words" && !isWordsList) return;
     if (entryType === "bumpou" && isWordsList) return;
     const entry = parseTerm(isWordsList ? String(rawEntry).slice(6) : String(rawEntry).slice(7));
+
+    // ---- $be$ be動詞マッチ ----
+    if (entry.isBe) {
+      const restVariants = buildPhraseVariants(entry.beRest, isWordsList);
+      BE_FORMS.forEach(beForm => {
+        restVariants.forEach(({ phrase: restPhrase, tokenCount: restCount }) => {
+          const fullPhrase = restPhrase ? beForm + " " + restPhrase : beForm;
+          const fullCount = beForm.split(" ").length + restCount;
+          let pos = -1;
+          while ((pos = joinedText.indexOf(fullPhrase, pos + 1)) !== -1) {
+            const before = pos === 0 || joinedText[pos-1] === ' ';
+            const after = pos + fullPhrase.length === joinedText.length || joinedText[pos + fullPhrase.length] === ' ';
+            if (before && after) {
+              candidates.push({
+                original: entry.original,
+                matchedPhrase: fullPhrase,
+                start: pos,
+                end: pos + fullPhrase.length,
+                isWords: isWordsList,
+                length: fullPhrase.length,
+                bwIndex
+              });
+            }
+          }
+        });
+      });
+      return;
+    }
 
     // ---- -c- ギャップマッチ ----
     if (entry.isGap) {
@@ -1220,8 +1286,8 @@ async function loadWordList() {
        break;
     }
     const s = String(v); let term = null;
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/\$be\$\s*/g, "be ").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/\$be\$\s*/g, "be ").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
     if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
     if (lineNum >= haniNums[currentSection]) currentSection++;
   });
@@ -1235,10 +1301,23 @@ async function doLookup() {
   const bwRaw = await getRawList("bwitems"), imiRaw = await getRawList("imi"), reibunRaw = await getRawList("reibun");
   const matches = [];
   bwRaw.forEach((v, i) => {
-    const s = String(v); let term = "";
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-    if (term === query) matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: s.split(":")[1].replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim(), idx: i });
+    const s = String(v); let term = "", displayTerm = "";
+    const raw = s.startsWith("bumpou:") ? s.slice(7) : s.startsWith("words:") ? s.slice(6) : null;
+    if (raw === null) return;
+    const isBe = raw.includes("$be$");
+    if (isBe) {
+      // $be$ エントリ: be以外の部分を取り出してBE_FORMSと組み合わせた全形と照合
+      const rest = raw.replace(/\$be\$\s*/g, "").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+      displayTerm = ("be " + rest).replace(/\s+/g, " ").trim();
+      const allForms = BE_FORMS.map(bf => rest ? bf + " " + rest : bf);
+      if (!allForms.some(f => f.toLowerCase() === query)) return;
+      term = displayTerm;
+    } else {
+      term = raw.replace(/\$be\$\s*/g, "be ").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+      displayTerm = raw.replace(/\$be\$\s*/g, "be ").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+      if (term !== query) return;
+    }
+    matches.push({ kind: s.startsWith("bumpou:") ? "文法" : "単語", term: displayTerm, idx: i });
   });
   const res = document.getElementById("lookupResult"); res.style.display = "flex";
   if (!matches.length) { res.innerHTML = `<div class="lookup-not-found">"${escHtml(query)}" は見つかりませんでした。</div>`; return; }
