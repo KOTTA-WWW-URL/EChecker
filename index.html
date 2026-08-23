@@ -776,6 +776,7 @@ async function handleCmd(raw) {
     print("!irregular!  文頭判定あり: 直後に?が来る文ではカウントしない (例: What!irregular!)", "cmd-info");
     print("$irregular$  直前にカンマが必要な表現 (例: although$irregular$)", "cmd-info");
     print("-c-   ギャップマッチ: 始点〜終点の間に任意の語を許容 (例: What-c-for?)", "cmd-info");
+    print("-cc-  語尾ギャップマッチ: 始点の後ろに指定語尾で終わるトークンがあればマッチ (例: Would you mind-cc-ing)", "cmd-info");
     print("$be$  be動詞の全活用でマッチ (例: $be$ able to → is/are/was/were able to など)", "cmd-info");
     return;
   }
@@ -894,13 +895,29 @@ function parseTerm(raw) {
     });
   }
 
+  // -cc- フラグ: 始点〜語尾マッチ終点のギャップマッチ
+  // 例: "Would you mind-cc-ing" → 始点 "would you mind" の後ろに "ing" で終わるトークンがあればマッチ
+  if (rawStr.includes("-cc-")) {
+    const [startStr, endStr] = rawStr.split("-cc-");
+    const suffix = endStr.replace(/[^a-z'-]+$/g, "").replace(/^[^a-z'-]+/g, "").trim();
+    return {
+      original: rawStr.replace(/-cc-/g, "~").replace(/(%d%|%dd%)/g, "").replace(/\s+/g, " ").trim(),
+      isGap: true,
+      isSuffixGap: true,
+      startParts: toParts(startStr || ""),
+      endSuffix: suffix,   // "ing" など語尾文字列
+      irregular,
+      commaRequired
+    };
+  }
+
   // -c- フラグ: 始点と終点に分割（ギャップマッチ）
   if (rawStr.includes("-c-")) {
-    isGap = true;
     const [startStr, endStr] = rawStr.split("-c-");
     return {
       original: rawStr.replace(/-c-/g, "~").replace(/(%d%|%dd%)/g, "").replace(/\s+/g, " ").trim(),
       isGap: true,
+      isSuffixGap: false,
       startParts: toParts(startStr || ""),
       endParts: toParts(endStr || ""),
       irregular,
@@ -1103,13 +1120,12 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
       return;
     }
 
-    // ---- -c- ギャップマッチ ----
+    // ---- -c- / -cc- ギャップマッチ ----
     if (entry.isGap) {
       const startVariants = buildPhraseVariants(entry.startParts, isWordsList);
-      const endVariants = buildPhraseVariants(entry.endParts, isWordsList);
-      if (!startVariants.length || !endVariants.length) return;
+      if (!startVariants.length) return;
 
-      // 始点フレーズのすべての出現位置を集める
+      // 始点フレーズのすべての出現位置を集める（-c- / -cc- 共通）
       let startOccurrences = [];
       startVariants.forEach(sv => {
         let pos = -1;
@@ -1119,7 +1135,46 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
           if (before && after) startOccurrences.push({ pos, tokenCount: sv.tokenCount });
         }
       });
-      // 終点フレーズのすべての出現位置を集める
+      if (!startOccurrences.length) return;
+
+      // ---- -cc-: 語尾マッチ ----
+      if (entry.isSuffixGap) {
+        const suffix = entry.endSuffix; // "ing" など
+        // joinedText上の全トークンを取得して語尾マッチ候補を探す
+        const allTokens = joinedText.split(" ");
+        let endOccurrences = [];
+        let charPos = 0;
+        allTokens.forEach(tok => {
+          if (tok.endsWith(suffix) && tok.length > suffix.length) {
+            endOccurrences.push({ pos: charPos, end: charPos + tok.length, tokenCount: 1 });
+          }
+          charPos += tok.length + 1; // +1 for space
+        });
+
+        startOccurrences.forEach(so => {
+          const candidatesEnd = endOccurrences.filter(eo => eo.pos > so.pos).sort((a, b) => a.pos - b.pos);
+          if (!candidatesEnd.length) return;
+          const eo = candidatesEnd[0];
+          const startTokenIdx = charPosToTokenIdx(so.pos);
+          const endTokenIdx = charPosToTokenIdx(eo.pos);
+          const endTokenEndIdx = endTokenIdx + eo.tokenCount - 1;
+          if (!hasNoSentenceBreakBetween(text, tokenPositions, startTokenIdx, endTokenEndIdx)) return;
+          candidates.push({
+            original: entry.original,
+            matchedPhrase: joinedText.slice(so.pos, eo.end),
+            start: so.pos,
+            end: eo.end,
+            isWords: isWordsList,
+            length: eo.end - so.pos,
+            bwIndex
+          });
+        });
+        return;
+      }
+
+      // ---- -c-: 通常終点マッチ ----
+      const endVariants = buildPhraseVariants(entry.endParts, isWordsList);
+      if (!endVariants.length) return;
       let endOccurrences = [];
       endVariants.forEach(ev => {
         let pos = -1;
