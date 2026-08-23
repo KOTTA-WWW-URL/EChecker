@@ -1279,18 +1279,18 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   const finalWords = new Set();
   const usedRanges = [];
 
-  // wordsを優先して処理
-  candidates.filter(c => c.isWords).forEach(c => {
+  // bumpouを優先して処理
+  candidates.filter(c => !c.isWords).forEach(c => {
     if (!usedRanges.some(r => (c.start < r.end && c.end > r.start))) {
-      finalWords.add(c.original);
+      finalBumpou.add(c.original);
       usedRanges.push({start: c.start, end: c.end});
     }
   });
 
-  // bumpouを処理（既にwordsで使われた範囲はスキップ）
-  candidates.filter(c => !c.isWords).forEach(c => {
+  // wordsを処理（既にbumpouで使われた範囲はスキップ）
+  candidates.filter(c => c.isWords).forEach(c => {
     if (!usedRanges.some(r => (c.start < r.end && c.end > r.start))) {
-      finalBumpou.add(c.original);
+      finalWords.add(c.original);
       usedRanges.push({start: c.start, end: c.end});
     }
   });
