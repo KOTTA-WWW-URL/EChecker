@@ -562,22 +562,17 @@
   </div>
 </div>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+<script>
+const GITHUB_JSON_URL = "https://raw.githubusercontent.com/kotta-www-url/EChecker/main/tango-bunpou-checker-default-rtdb-export.json";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCPdILlioJpXCnxYmmEXoHgW6kCwHZ4NjU",
-  authDomain: "tango-bunpou-checker.firebaseapp.com",
-  projectId: "tango-bunpou-checker",
-  storageBucket: "tango-bunpou-checker.firebasestorage.app",
-  messagingSenderId: "875208468520",
-  appId: "1:875208468520:web:17070aea1c2f6f462f6d1d",
-  databaseURL: "https://tango-bunpou-checker-default-rtdb.firebaseio.com/"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+// インメモリDB（起動時にGitHubからfetchして保持）
+let _db = null;
+async function loadDB() {
+  if (_db) return _db;
+  const res = await fetch(GITHUB_JSON_URL);
+  _db = await res.json();
+  return _db;
+}
 
 const LISTS = ["bumpou", "hani", "words", "imi", "reibun", "haniname", "or"];
 let isAdmin = false;
@@ -600,18 +595,19 @@ function parseArgs(str) {
   return tokens;
 }
 
-const MERGED = ["bumpou", "words"]; 
+const MERGED = ["bumpou", "words"];
 
 async function getRawList(name) {
-  const snap = await get(ref(db, `lists/${name}`));
-  if (!snap.exists()) return [];
-  const val = snap.val();
-  if (Array.isArray(val)) return val.filter(v => v !== null && v !== undefined);
-  return Object.values(val);
+  const db = await loadDB();
+  const val = db.lists?.[name];
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(v => v !== null && v !== undefined && v !== "");
+  return Object.values(val).filter(v => v !== null && v !== undefined && v !== "");
 }
 
 async function saveRawList(name, arr) {
-  await set(ref(db, `lists/${name}`), arr);
+  // 読み込み専用のため書き込みは無効
+  console.warn("saveRawList: 読み込み専用モードのため保存できません");
 }
 
 async function getList(name) {
@@ -620,20 +616,11 @@ async function getList(name) {
 }
 
 async function saveList(name, arr) {
-  if (MERGED.includes(name)) return saveRawList("bwitems", arr);
-  return saveRawList(name, arr);
+  console.warn("saveList: 読み込み専用モードのため保存できません");
 }
 
 async function addToBW(pos, kind, val) {
-  const entry = kind + ":" + val;
-  const arr = await getRawList("bwitems");
-  if (pos === "f") arr.push(entry);
-  else {
-    const i = parseInt(pos);
-    arr.splice(isNaN(i) || i < 0 ? arr.length : i, 0, entry);
-  }
-  await saveRawList("bwitems", arr);
-  return arr.length;
+  console.warn("addToBW: 読み込み専用モードのため保存できません");
 }
 
 function filterBW(arr, kind) {
@@ -656,20 +643,13 @@ function print(html, cls = "cmd-info") {
 
 function initCmdMessages() {
   cmdOutput.innerHTML = "";
-  print("Firebase 接続済み ✓", "cmd-ok");
-  print("add f haniname 'Lesson 1'  /  show haniname", "cmd-info");
-  print("replaceall 3 hani 10  (index 3〜最後のhaniに+10)", "cmd-info");
+  print("GitHub JSON 読み込み済み ✓", "cmd-ok");
+  print("※ 読み込み専用モード（add/remove/replace は無効）", "cmd-info");
+  print("show &lt;list&gt; で内容確認 / cmd でコマンド一覧", "cmd-info");
 }
 
 async function addTo(pos, name, val) {
-  if (MERGED.includes(name)) { await addToBW(pos, name, val); return; }
-  const arr = await getRawList(name);
-  if (pos === "f") arr.push(val);
-  else {
-    const i = parseInt(pos);
-    arr.splice(isNaN(i) || i < 0 ? arr.length : i, 0, val);
-  }
-  await saveRawList(name, arr);
+  print("読み込み専用モードのため書き込みできません", "cmd-err");
 }
 
 async function handleCmd(raw) {
@@ -690,84 +670,16 @@ async function handleCmd(raw) {
     return;
   }
 
-  if (cmd === "add") {
-    const pos = tokens[1], listArg = tokens[2], rest = tokens.slice(3).join(" ");
-    if (!pos || !listArg) { print("エラー: add &lt;f|番号&gt; &lt;リスト|allb|allw&gt; [値]", "cmd-err"); return; }
-    if (listArg.toLowerCase() === "allb" || listArg.toLowerCase() === "allw") {
-      const mainVal = tokens[3] || "", imiVal = tokens[4] || "", reibunVal = tokens[5] || "";
-      const mainList = listArg.toLowerCase() === "allb" ? "bumpou" : "words";
-      await addTo(pos, mainList, mainVal); await addTo(pos, "imi", imiVal); await addTo(pos, "reibun", reibunVal);
-      print(`追加: [${mainList}] "${escHtml(mainVal)}" / [imi] "${escHtml(imiVal)}" / [reibun] "${escHtml(reibunVal)}"`, "cmd-ok");
-      return;
-    }
-    if (!LISTS.includes(listArg)) { print(`エラー: 不明なリスト "${escHtml(listArg)}"`, "cmd-err"); return; }
-    await addTo(pos, listArg, rest);
-    print(`追加: [${listArg}] "${escHtml(rest)}"`, "cmd-ok");
-    if (listArg === "haniname") await initHaniUI();
+  if (cmd === "add" || cmd === "remove" || cmd === "replace" || cmd === "replaceall") {
+    print("読み込み専用モードのため、書き込みコマンドは使用できません", "cmd-err");
+    print("JSONファイルを直接編集してGitHubにpushしてください", "cmd-info");
     return;
   }
 
-  if (cmd === "remove") {
-    const posRm = tokens[1], name = tokens[2];
-    if (!posRm || !name) { print("エラー: remove &lt;f|番号&gt; &lt;リスト|allb|allw&gt;", "cmd-err"); return; }
-    if (name.toLowerCase() === "allb" || name.toLowerCase() === "allw") {
-      const bwArr = await getRawList("bwitems"), imiArr = await getRawList("imi"), rbArr = await getRawList("reibun");
-      const idx = posRm === "f" ? bwArr.length - 1 : parseInt(posRm);
-      if (isNaN(idx) || idx < 0 || idx >= bwArr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
-      bwArr.splice(idx, 1); imiArr.splice(idx, 1); rbArr.splice(idx, 1);
-      await saveRawList("bwitems", bwArr); await saveRawList("imi", imiArr); await saveRawList("reibun", rbArr);
-      print(`削除完了`, "cmd-ok"); return;
-    }
-    const arr = await getList(name);
-    const idx = posRm === "f" ? arr.length - 1 : parseInt(posRm);
-    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
-    arr.splice(idx, 1); await saveList(name, arr);
-    print(`削除完了`, "cmd-ok");
-    if (name === "haniname") await initHaniUI();
-    return;
-  }
-
-  if (cmd === "replace") {
-    const posR = tokens[1], name = tokens[2];
-    if (!posR || !name) { print("エラー: replace &lt;f|番号&gt; &lt;リスト&gt; &lt;新しい値&gt;", "cmd-err"); return; }
-    const arr = await getList(name);
-    const idx = posR === "f" ? arr.length - 1 : parseInt(posR);
-    if (isNaN(idx) || idx < 0 || idx >= arr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
-    arr[idx] = tokens.slice(3).join(" ");
-    await saveList(name, arr);
-    print(`置換完了`, "cmd-ok");
-    if (name === "haniname") await initHaniUI();
-    return;
-  }
-
-  if (cmd === "replaceall") {
-    const startPos = tokens[1], name = tokens[2], deltaStr = tokens[3];
-    if (!startPos || !name || deltaStr === undefined) { print("エラー: replaceall &lt;番号&gt; hani &lt;増分値&gt;", "cmd-err"); return; }
-    if (name !== "hani") { print(`エラー: replaceall は hani のみ対応しています`, "cmd-err"); return; }
-    const startIdx = parseInt(startPos);
-    const delta = parseInt(deltaStr);
-    if (isNaN(startIdx) || startIdx < 0) { print(`エラー: 開始位置が不正です`, "cmd-err"); return; }
-    if (isNaN(delta)) { print(`エラー: 増分値が不正です`, "cmd-err"); return; }
-    const arr = await getRawList("hani");
-    if (startIdx >= arr.length) { print(`エラー: 範囲外`, "cmd-err"); return; }
-    let changed = 0;
-    for (let i = startIdx; i < arr.length; i++) {
-      const n = parseInt(String(arr[i]).trim());
-      if (!isNaN(n)) { arr[i] = String(n + delta); changed++; }
-    }
-    await saveRawList("hani", arr);
-    print(`一括更新完了: [hani] index ${startIdx} 〜 ${arr.length - 1} の ${changed} 件に ${delta >= 0 ? "+" : ""}${delta} しました`, "cmd-ok");
-    return;
-  }
   if (cmd === "cmd") {
     print("━━━━ コマンド一覧 ━━━━", "cmd-ok");
-    print("show &lt;list&gt;                    リストの内容を表示", "cmd-info");
-    print("add &lt;f|番号&gt; &lt;list&gt; &lt;値&gt;       リストに追加（f=末尾）", "cmd-info");
-    print("add &lt;f|番号&gt; allb &lt;語&gt; &lt;意味&gt; &lt;例文&gt;  bumpou+imi+reibun を一括追加", "cmd-info");
-    print("add &lt;f|番号&gt; allw &lt;語&gt; &lt;意味&gt; &lt;例文&gt;  words+imi+reibun を一括追加", "cmd-info");
-    print("remove &lt;f|番号&gt; &lt;list&gt;          リストから削除", "cmd-info");
-    print("replace &lt;f|番号&gt; &lt;list&gt; &lt;新値&gt;  リストの値を置換", "cmd-info");
-    print("replaceall &lt;番号&gt; hani &lt;増分&gt;    haniの指定index以降に増分を加算", "cmd-info");
+    print("show &lt;list&gt;   リストの内容を表示（読み込みのみ）", "cmd-info");
+    print("※ add / remove / replace / replaceall はGitHub JSONを直接編集してください", "cmd-info");
     print("━━━━ リスト名 ━━━━", "cmd-ok");
     print("bumpou / words / imi / reibun / hani / haniname / or", "cmd-info");
     print("━━━━ 特殊フラグ ━━━━", "cmd-ok");
@@ -782,6 +694,7 @@ async function handleCmd(raw) {
   }
   print(`不明なコマンド: "${escHtml(cmd)}"`, "cmd-err");
 }
+
 
 cmdInput.addEventListener("keydown", async e => {
   if (e.key === "Enter") {
@@ -1341,8 +1254,8 @@ async function loadWordList() {
        break;
     }
     const s = String(v); let term = null;
-    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/\$be\$\s*/g, "be ").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
-    else if (s.startsWith("words:")) term = s.slice(6).replace(/\$be\$\s*/g, "be ").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+    if (s.startsWith("bumpou:")) term = s.slice(7).replace(/\$be\$\s*/g, "be ").replace(/-cc-/g, "~").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
+    else if (s.startsWith("words:")) term = s.slice(6).replace(/\$be\$\s*/g, "be ").replace(/-cc-/g, "~").replace(/-c-/g, "~").replace(/(!irregular!|\$irregular\$|%dd%|%d%)/g, "").replace(/\s+/g, " ").trim();
     if (term) rows += `<tr><td>${escHtml(term)}</td><td class="wl-imi">${escHtml(imiRaw[i] || "")}</td></tr>`;
     if (lineNum >= haniNums[currentSection]) currentSection++;
   });
@@ -1397,8 +1310,10 @@ function closePass() { passOverlay.classList.remove("open"); }
 function openCmd() { document.getElementById("cmdOverlay").classList.add("open"); setTimeout(() => cmdInput.focus(), 60); }
 function closeCmd() { document.getElementById("cmdOverlay").classList.remove("open"); }
 async function tryLogin() {
-  const entered = passInput.value.trim(), snap = await get(ref(db, "pass"));
-  if (snap.exists() && entered === String(snap.val()).trim()) {
+  const entered = passInput.value.trim();
+  const db = await loadDB();
+  const pass = db.pass ? String(db.pass).trim() : null;
+  if (pass && entered === pass) {
     isAdmin = true; closePass(); adminBtn.textContent = "CMD"; initCmdMessages(); openCmd();
   } else {
     document.getElementById("passErr").style.display = "block"; passInput.value = "";
