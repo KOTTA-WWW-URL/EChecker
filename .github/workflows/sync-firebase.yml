@@ -1,0 +1,46 @@
+name: Sync Firebase to JSON
+
+on:
+  # 「Actions」タブから手動で実行するためのトリガー
+  workflow_dispatch: {}
+
+  # 定期的に自動実行したい場合はここのコメントを外してください（例: 毎日 日本時間9時ごろ）
+  # schedule:
+  #   - cron: "0 0 * * *"
+
+# リポジトリにコミット・プッシュするために書き込み権限を付与
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: FirebaseからJSONを取得
+        run: |
+          curl -sSL "https://tango-bunpou-checker-default-rtdb.firebaseio.com/.json" \
+            -o tango-bunpou-checker-default-rtdb-export.json
+
+      - name: 取得したJSONが空や壊れていないか簡易チェック
+        run: |
+          if [ ! -s tango-bunpou-checker-default-rtdb-export.json ]; then
+            echo "エラー: 取得したJSONが空です。処理を中断します。"
+            exit 1
+          fi
+          # JSONとして正しくパースできるか（jqは Ubuntu ランナーに標準搭載）
+          jq empty tango-bunpou-checker-default-rtdb-export.json
+
+      - name: 変更があればコミット＆プッシュ
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tango-bunpou-checker-default-rtdb-export.json
+          if git diff --cached --quiet; then
+            echo "変更なし。コミットをスキップします。"
+          else
+            git commit -m "chore: Firebaseからデータを自動同期"
+            git push
+          fi
