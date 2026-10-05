@@ -564,6 +564,7 @@
 
 <script>
 const GITHUB_JSON_URL = "https://raw.githubusercontent.com/kotta-www-url/EChecker/main/tango-bunpou-checker-default-rtdb-export.json";
+const FIREBASE_BASE_URL = "https://tango-bunpou-checker-default-rtdb.firebaseio.com";
 
 // インメモリDB（起動時にGitHubからfetchして保持）
 let _db = null;
@@ -605,9 +606,27 @@ async function getRawList(name) {
   return Object.values(val).filter(v => v !== null && v !== undefined && v !== "");
 }
 
+// ---- Firebase書き込み（.write: true 前提の直接REST書き込み） ----
+async function fbPutList(name, arr) {
+  const url = `${FIREBASE_BASE_URL}/lists/${encodeURIComponent(name)}.json`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(arr)
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Firebase書き込み失敗 (HTTP ${res.status}) ${t}`);
+  }
+  return res.json();
+}
+
 async function saveRawList(name, arr) {
-  // 読み込み専用のため書き込みは無効
-  console.warn("saveRawList: 読み込み専用モードのため保存できません");
+  await fbPutList(name, arr);
+  // ローカルキャッシュも即時反映（次のGitHub Actions実行まではこのタブ内のみ）
+  const db = await loadDB();
+  if (!db.lists) db.lists = {};
+  db.lists[name] = arr;
 }
 
 async function getList(name) {
@@ -616,11 +635,8 @@ async function getList(name) {
 }
 
 async function saveList(name, arr) {
-  console.warn("saveList: 読み込み専用モードのため保存できません");
-}
-
-async function addToBW(pos, kind, val) {
-  console.warn("addToBW: 読み込み専用モードのため保存できません");
+  if (MERGED.includes(name)) return saveRawList("bwitems", arr);
+  return saveRawList(name, arr);
 }
 
 function filterBW(arr, kind) {
@@ -643,13 +659,10 @@ function print(html, cls = "cmd-info") {
 
 function initCmdMessages() {
   cmdOutput.innerHTML = "";
-  print("GitHub JSON 読み込み済み ✓", "cmd-ok");
-  print("※ 読み込み専用モード（add/remove/replace は無効）", "cmd-info");
+  print("GitHub JSON 読み込み済み ✓ ／ Firebase 書き込み有効 ✓", "cmd-ok");
+  print("⚠ 書き込みは全世界に公開されています（.write: true）。取り扱い注意。", "cmd-err");
   print("show &lt;list&gt; で内容確認 / cmd でコマンド一覧", "cmd-info");
-}
-
-async function addTo(pos, name, val) {
-  print("読み込み専用モードのため書き込みできません", "cmd-err");
+  print("⚠ 書き込みはこのタブ内キャッシュには即反映されますが、サイト全体（他の人）には GitHub Actions の Run workflow を押すまで反映されません", "cmd-info");
 }
 
 async function handleCmd(raw) {
@@ -670,19 +683,128 @@ async function handleCmd(raw) {
     return;
   }
 
-  if (cmd === "add" || cmd === "remove" || cmd === "replace" || cmd === "replaceall") {
-    print("読み込み専用モードのため、書き込みコマンドは使用できません", "cmd-err");
-    print("JSONファイルを直接編集してGitHubにpushしてください", "cmd-info");
+  // ---- add: 単語/文法をペアで追加 ----
+  // add <bumpou|words> "<語>" ["<意味>"] ["<例文>"]
+  // add <hani|haniname|or|imi|reibun> "<値>"
+  if (cmd === "add") {
+    const kind = tokens[1];
+    if (!kind || !LISTS.includes(kind)) { print(`エラー: add &lt;${LISTS.join("|")}&gt; "値" ...`, "cmd-err"); return; }
+    try {
+      if (kind === "bumpou" || kind === "words") {
+        const term = tokens[2], imi = tokens[3] || "", reibun = tokens[4] || "";
+        if (!term) { print('エラー: add bumpou|words "語" ["意味"] ["例文"]', "cmd-err"); return; }
+        const bw = await getRawList("bwitems");
+        const imiArr = await getRawList("imi");
+        const reibunArr = await getRawList("reibun");
+        bw.push(`${kind}:${term}`);
+        imiArr.push(imi);
+        reibunArr.push(reibun);
+        await saveRawList("bwitems", bw);
+        await saveRawList("imi", imiArr);
+        await saveRawList("reibun", reibunArr);
+        print(`追加しました: [${bw.length - 1}] ${kind}:${term}`, "cmd-ok");
+      } else {
+        const val = tokens[2];
+        if (val === undefined) { print(`エラー: add ${kind} "値"`, "cmd-err"); return; }
+        const arr = await getRawList(kind);
+        arr.push(val);
+        await saveRawList(kind, arr);
+        print(`追加しました: [${arr.length - 1}] ${val}`, "cmd-ok");
+      }
+    } catch (err) {
+      print("エラー: " + escHtml(err.message), "cmd-err");
+    }
+    return;
+  }
+
+  // ---- remove: インデックス指定で削除 ----
+  // remove bumpou|words <index>   … bwitems + imi + reibun を同時に削除（並び対応を維持）
+  // remove <hani|haniname|or|imi|reibun> <index>
+  if (cmd === "remove") {
+    const kind = tokens[1];
+    const idx = parseInt(tokens[2]);
+    if (!kind || !LISTS.includes(kind) || isNaN(idx)) { print(`エラー: remove &lt;${LISTS.join("|")}&gt; &lt;index&gt;`, "cmd-err"); return; }
+    try {
+      if (kind === "bumpou" || kind === "words") {
+        const bw = await getRawList("bwitems");
+        const imiArr = await getRawList("imi");
+        const reibunArr = await getRawList("reibun");
+        if (idx < 0 || idx >= bw.length) { print("エラー: 範囲外のindexです", "cmd-err"); return; }
+        const removed = bw[idx];
+        bw.splice(idx, 1);
+        imiArr.splice(idx, 1);
+        reibunArr.splice(idx, 1);
+        await saveRawList("bwitems", bw);
+        await saveRawList("imi", imiArr);
+        await saveRawList("reibun", reibunArr);
+        print(`削除しました: [${idx}] ${removed}`, "cmd-ok");
+      } else {
+        const arr = await getRawList(kind);
+        if (idx < 0 || idx >= arr.length) { print("エラー: 範囲外のindexです", "cmd-err"); return; }
+        const removed = arr[idx];
+        arr.splice(idx, 1);
+        await saveRawList(kind, arr);
+        print(`削除しました: [${idx}] ${removed}`, "cmd-ok");
+      }
+    } catch (err) {
+      print("エラー: " + escHtml(err.message), "cmd-err");
+    }
+    return;
+  }
+
+  // ---- replace: インデックス指定で置換 ----
+  // replace bumpou|words <index> "<語>" ["<意味>"] ["<例文>"]  … 省略した項目は変更しない
+  // replace <hani|haniname|or|imi|reibun> <index> "<値>"
+  if (cmd === "replace") {
+    const kind = tokens[1];
+    const idx = parseInt(tokens[2]);
+    if (!kind || !LISTS.includes(kind) || isNaN(idx)) { print(`エラー: replace &lt;${LISTS.join("|")}&gt; &lt;index&gt; "値" ...`, "cmd-err"); return; }
+    try {
+      if (kind === "bumpou" || kind === "words") {
+        const bw = await getRawList("bwitems");
+        const imiArr = await getRawList("imi");
+        const reibunArr = await getRawList("reibun");
+        if (idx < 0 || idx >= bw.length) { print("エラー: 範囲外のindexです", "cmd-err"); return; }
+        const term = tokens[3], imi = tokens[4], reibun = tokens[5];
+        if (term !== undefined) bw[idx] = `${kind}:${term}`;
+        if (imi !== undefined) imiArr[idx] = imi;
+        if (reibun !== undefined) reibunArr[idx] = reibun;
+        await saveRawList("bwitems", bw);
+        await saveRawList("imi", imiArr);
+        await saveRawList("reibun", reibunArr);
+        print(`置換しました: [${idx}] ${bw[idx]}`, "cmd-ok");
+      } else {
+        const val = tokens[3];
+        if (val === undefined) { print(`エラー: replace ${kind} &lt;index&gt; "値"`, "cmd-err"); return; }
+        const arr = await getRawList(kind);
+        if (idx < 0 || idx >= arr.length) { print("エラー: 範囲外のindexです", "cmd-err"); return; }
+        arr[idx] = val;
+        await saveRawList(kind, arr);
+        print(`置換しました: [${idx}] ${val}`, "cmd-ok");
+      }
+    } catch (err) {
+      print("エラー: " + escHtml(err.message), "cmd-err");
+    }
+    return;
+  }
+
+  if (cmd === "replaceall") {
+    print("replaceall は事故防止のため無効化しています。個別に add/remove/replace を使うか、Firebaseコンソールから直接編集してください。", "cmd-err");
     return;
   }
 
   if (cmd === "cmd") {
     print("━━━━ コマンド一覧 ━━━━", "cmd-ok");
-    print("show &lt;list&gt;   リストの内容を表示（読み込みのみ）", "cmd-info");
-    print("※ add / remove / replace / replaceall はGitHub JSONを直接編集してください", "cmd-info");
+    print("show &lt;list&gt;                                    リストの内容を表示", "cmd-info");
+    print('add bumpou|words "語" ["意味"] ["例文"]              単語/文法を末尾に追加', "cmd-info");
+    print('add hani|haniname|or|imi|reibun "値"                  単独リストに末尾追加', "cmd-info");
+    print("remove bumpou|words &lt;index&gt;                       単語/文法をindex指定で削除（意味・例文も同時に削除）", "cmd-info");
+    print("remove hani|haniname|or|imi|reibun &lt;index&gt;         単独リストからindex指定で削除", "cmd-info");
+    print('replace bumpou|words &lt;index&gt; "語" ["意味"] ["例文"] index指定で置換（省略項目は変更なし）', "cmd-info");
+    print('replace hani|haniname|or|imi|reibun &lt;index&gt; "値"   単独リストのindex指定で置換', "cmd-info");
     print("━━━━ リスト名 ━━━━", "cmd-ok");
     print("bumpou / words / imi / reibun / hani / haniname / or", "cmd-info");
-    print("━━━━ 特殊フラグ ━━━━", "cmd-ok");
+    print("━━━━ 特殊フラグ（語に含めて入力） ━━━━", "cmd-ok");
     print("%d%   動詞の活用形を自動生成 (例: look%d% → looks/looked/looking)", "cmd-info");
     print("%dd%  子音を重ねた活用形を自動生成 (例: top%dd% → tops/topped/topping)", "cmd-info");
     print("!irregular!  文頭判定あり: 直後に?が来る文ではカウントしない (例: What!irregular!)", "cmd-info");
@@ -690,6 +812,9 @@ async function handleCmd(raw) {
     print("-c-   ギャップマッチ: 始点〜終点の間に任意の語を許容 (例: What-c-for?)", "cmd-info");
     print("-cc-  語尾ギャップマッチ: 始点の後ろに指定語尾で終わるトークンがあればマッチ (例: Would you mind-cc-ing)", "cmd-info");
     print("$be$  be動詞の全活用でマッチ (例: $be$ able to → is/are/was/were able to など)", "cmd-info");
+    print("━━━━ 注意 ━━━━", "cmd-ok");
+    print("スペースを含む語・意味・例文は \" \" で囲んでください", "cmd-info");
+    print("書き込みはFirebaseに即反映されますが、サイト全体への反映はGitHub Actionsの実行後です", "cmd-info");
     return;
   }
   print(`不明なコマンド: "${escHtml(cmd)}"`, "cmd-err");
